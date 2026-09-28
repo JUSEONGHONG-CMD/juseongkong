@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "benefit-radar/profile.schema.json",
+  "title": "Benefit Radar 가구 프로필",
+  "description": "지원제도 자격 판정에 쓰는 가구 단위 입력값. 실제 값은 절대 저장소에 커밋하지 않는다(비공개 Routine 설정 또는 앱의 암호화 저장소에만 둔다).",
+  "type": "object",
+  "required": ["schema_version", "household", "members"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "household": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["single", "couple_preparing", "newlywed", "married", "family_with_children"],
+          "description": "1인 청년 / 결혼 준비 커플 / 신혼 / 기혼 / 자녀 가구"
+        },
+        "wedding_date": { "type": ["string", "null"], "format": "date", "description": "예식(예정)일" },
+        "marriage_registration": {
+          "type": "object",
+          "properties": {
+            "status": { "enum": ["not_registered", "planned", "registered"] },
+            "date": { "type": ["string", "null"], "format": "date", "description": "혼인신고일 또는 예정일" }
+          }
+        },
+        "children": {
+          "type": "object",
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "pregnancy": { "type": "boolean" },
+            "plan": { "type": ["string", "null"], "description": "자녀 계획(예: 2년 내)" }
+          }
+        },
+        "housing_plan": {
+          "type": "object",
+          "properties": {
+            "type": { "enum": ["jeonse", "monthly_rent", "purchase", "public_rental", "undecided"] },
+            "target_region": { "type": ["string", "null"], "description": "희망 시·도/시·군·구" },
+            "target_price_krw": { "type": ["integer", "null"], "description": "예상 보증금 또는 매매가" },
+            "move_in_date": { "type": ["string", "null"], "format": "date" }
+          }
+        },
+        "interests": {
+          "type": "array",
+          "items": { "enum": ["housing", "loan", "savings", "tax", "employment", "wedding", "childbirth", "health", "culture", "transport", "education"] }
+        },
+        "income_refresh_month": {
+          "type": "integer", "minimum": 1, "maximum": 12, "default": 4,
+          "description": "직전연도 소득이 공식 기준으로 확정되는 달. 이 달부터 연봉 재입력을 요청한다."
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/member" }
+    },
+    "notes": { "type": ["string", "null"], "description": "자유 서술(특이사항)" }
+  },
+  "$defs": {
+    "member": {
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "description": "리포트에 표시할 호칭(예: 본인, 배우자). 실명은 비공개 설정에만." },
+        "birth_date": { "type": ["string", "null"], "format": "date" },
+        "sex": { "enum": ["male", "female", null] },
+        "military_service": { "enum": ["completed", "exempt", "not_applicable", "pending", null] },
+        "residence": {
+          "type": "object",
+          "properties": {
+            "sido": { "type": ["string", "null"] },
+            "sigungu": { "type": ["string", "null"] },
+            "move_in_date": { "type": ["string", "null"], "format": "date", "description": "현 주소 전입일(거주기간 요건)" },
+            "is_head_of_household": { "type": ["boolean", "null"], "description": "세대주 여부" },
+            "household_members": { "type": ["string", "null"], "description": "현재 주민등록상 세대 구성(예: 부모와 동일 세대)" }
+          }
+        },
+        "income": {
+          "type": "object",
+          "properties": {
+            "base_year": { "type": ["integer", "null"], "description": "아래 금액이 몇 년 귀속 소득인지" },
+            "annual_gross_krw": { "type": ["integer", "null"], "description": "세전 연소득" },
+            "income_type": { "enum": ["employment", "business", "mixed", "none", null] },
+            "health_insurance_monthly_krw": { "type": ["integer", "null"], "description": "건강보험료 월 본인부담액(기준중위소득 판정용)" }
+          }
+        },
+        "employment": {
+          "type": "object",
+          "properties": {
+            "status": { "enum": ["regular", "contract", "self_employed", "freelancer", "job_seeking", "student", null] },
+            "company_size": { "enum": ["small", "mid", "large", "public", null], "description": "중소/중견/대기업/공공" },
+            "start_date": { "type": ["string", "null"], "format": "date" },
+            "industry": { "type": ["string", "null"] }
+          }
+        },
+        "assets": {
+          "type": "object",
+          "properties": {
+            "homeless": { "type": ["boolean", "null"], "description": "현재 무주택" },
+            "ever_owned_home": { "type": ["boolean", "null"], "description": "과거 주택 소유 이력(생애최초 판정)" },
+            "real_estate_krw": { "type": ["integer", "null"] },
+            "car_value_krw": { "type": ["integer", "null"] },
+            "financial_assets_krw": { "type": ["integer", "null"] },
+            "debts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "description": "학자금, 전세대출, 신용대출 등" },
+                  "amount_krw": { "type": ["integer", "null"] },
+                  "is_policy_loan": { "type": ["boolean", "null"] }
+                }
+              }
+            }
+          }
+        },
+        "subscription_account": {
+          "type": "object",
+          "description": "주택청약종합저축",
+          "properties": {
+            "has_account": { "type": ["boolean", "null"] },
+            "type": { "type": ["string", "null"], "description": "종합저축/청년우대형/청년주택드림 등" },
+            "opened_date": { "type": ["string", "null"], "format": "date" },
+            "payment_count": { "type": ["integer", "null"] },
+            "total_paid_krw": { "type": ["integer", "null"] }
+          }
+        },
+        "policy_products": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "가입 중인 정책 금융상품(청년도약계좌 등)"
+        },
+        "past_benefits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "과거/현재 수혜 제도(중복수혜 제한 판정)"
+        },
+        "parents": {
+          "type": "object",
+          "properties": {
+            "same_household": { "type": ["boolean", "null"] },
+            "income_note": { "type": ["string", "null"], "description": "부모 소득 관련 메모(일부 청년제도용)" }
+          }
+        }
+      }
+    }
+  }
+}

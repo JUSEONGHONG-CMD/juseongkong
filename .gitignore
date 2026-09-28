@@ -1,0 +1,19 @@
+# 평문 개인정보가 저장소에 들어가지 않도록 차단
+benefit-radar/outbox/*
+!benefit-radar/outbox/*.enc
+!benefit-radar/outbox/.gitkeep
+benefit-radar/state/*
+!benefit-radar/state/*.enc
+!benefit-radar/state/.gitkeep
+profile.yaml
+*.profile.yaml
+report.json
+payload.json
+state.json
+*.local.*
+preview*.html
+.env
+.env.*
+
+__pycache__/
+*.pyc

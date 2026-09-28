@@ -1,0 +1,76 @@
+name: send-benefit-report
+
+# 암호화된 주간 리포트(outbox/*.enc)가 push 되면 복호화해서 이메일로 보낸다.
+# 이 저장소는 공개이므로 로그에 수신자·제목·본문이 절대 찍히지 않게 한다.
+on:
+  push:
+    paths:
+      - "benefit-radar/outbox/*.enc"
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "다시 보낼 outbox 파일 경로 (예: benefit-radar/outbox/2026-10-05.json.enc)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: send-benefit-report
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find new outbox files
+        id: files
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          INPUT_FILE: ${{ github.event.inputs.file }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            case "$INPUT_FILE" in
+              benefit-radar/outbox/*.enc) printf '%s\n' "$INPUT_FILE" > "$RUNNER_TEMP/files.txt" ;;
+              *) echo "invalid file path"; exit 1 ;;
+            esac
+          elif [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            git show --diff-filter=A --name-only --format= "$GITHUB_SHA" -- 'benefit-radar/outbox/*.enc' > "$RUNNER_TEMP/files.txt"
+          else
+            git diff --diff-filter=A --name-only "$BEFORE" "$GITHUB_SHA" -- 'benefit-radar/outbox/*.enc' > "$RUNNER_TEMP/files.txt"
+          fi
+          echo "count=$(grep -c . "$RUNNER_TEMP/files.txt" || true)" >> "$GITHUB_OUTPUT"
+
+      - name: Decrypt and send
+        if: steps.files.outputs.count != '0'
+        shell: bash
+        env:
+          REPORT_PASSPHRASE: ${{ secrets.REPORT_PASSPHRASE }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          set +x
+          if [ -z "$REPORT_PASSPHRASE" ] || [ -z "$GMAIL_USER" ] || [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "missing secrets: REPORT_PASSPHRASE / GMAIL_USER / GMAIL_APP_PASSWORD"; exit 1
+          fi
+          work="$(mktemp -d "$RUNNER_TEMP/br.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          status=0
+          n=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            n=$((n+1))
+            benefit-radar/scripts/unseal.sh "$f" "$work/payload.json" || { echo "file $n: decrypt failed"; status=1; continue; }
+            python3 benefit-radar/scripts/deliver.py "$work/payload.json" --mask || status=1
+            rm -f "$work/payload.json"
+          done < "$RUNNER_TEMP/files.txt"
+          exit $status

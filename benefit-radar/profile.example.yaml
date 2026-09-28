@@ -1,0 +1,70 @@
+# Benefit Radar 가구 프로필 예시 (schema/profile.schema.json 기준)
+#
+# ⚠️ 이 파일은 빈 템플릿입니다. 실제 값을 채운 파일을 저장소에 커밋하지 마세요.
+#    실제 프로필은 비공개 Claude Routine 설정 안에만 둡니다(README 참고).
+#    이름 대신 label(본인/배우자 등)만 사용합니다.
+
+schema_version: "1.0"
+
+household:
+  type: couple_preparing          # single | couple_preparing | newlywed | married | family_with_children
+  wedding_date: null              # 예식(예정)일 YYYY-MM-DD
+  marriage_registration:
+    status: planned               # not_registered | planned | registered
+    date: null                    # 혼인신고(예정)일
+  children:
+    count: 0
+    pregnancy: false
+    plan: null                    # 예: "2년 내 1명"
+  housing_plan:
+    type: undecided               # jeonse | monthly_rent | purchase | public_rental | undecided
+    target_region: null           # 예: "OO시 OO구"
+    target_price_krw: null
+    move_in_date: null
+  interests: [housing, loan, savings, tax, wedding, childbirth]
+  income_refresh_month: 4         # 직전연도 소득이 공식 확정되는 달(연봉 재입력 알림 기준)
+
+members:
+  - label: 본인
+    birth_date: null
+    sex: null                     # male | female
+    military_service: null        # completed | exempt | not_applicable | pending
+    residence:
+      sido: null
+      sigungu: null
+      move_in_date: null          # 현 주소 전입일
+      is_head_of_household: null
+      household_members: null     # 예: "부모와 동일 세대"
+    income:
+      base_year: null             # 아래 금액의 귀속연도 (예: 2025)
+      annual_gross_krw: null      # 세전 연소득
+      income_type: employment     # employment | business | mixed | none
+      health_insurance_monthly_krw: null
+    employment:
+      status: regular             # regular | contract | self_employed | freelancer | job_seeking | student
+      company_size: null          # small | mid | large | public
+      start_date: null
+      industry: null
+    assets:
+      homeless: null
+      ever_owned_home: null
+      real_estate_krw: null
+      car_value_krw: null
+      financial_assets_krw: null
+      debts: []                   # - {kind: 학자금, amount_krw: 0, is_policy_loan: true}
+    subscription_account:
+      has_account: null
+      type: null
+      opened_date: null
+      payment_count: null
+      total_paid_krw: null
+    policy_products: []           # 예: [청년도약계좌]
+    past_benefits: []             # 예: [청년월세 특별지원]
+    parents:
+      same_household: null
+      income_note: null
+
+  - label: 배우자
+    # 위와 동일한 항목을 채웁니다.
+
+notes: null
