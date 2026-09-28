@@ -32,14 +32,14 @@ def main(argv=None) -> int:
     messages = payload["messages"]
     if args.mask:
         for m in messages:
-            for addr in m.get("to") or []:
+            for addr in (m.get("to") or []) + (m.get("cc") or []):
                 print(f"::add-mask::{addr}")
     channel = CHANNELS[args.channel]
     failed = 0
     for i, m in enumerate(messages, 1):
         try:
             channel.send(m, dry_run=args.dry_run)
-            print(f"message {i}/{len(messages)}: {'built (dry-run)' if args.dry_run else 'sent'} to {len(m.get('to') or [])} recipient(s)")
+            print(f"message {i}/{len(messages)}: {'built (dry-run)' if args.dry_run else 'sent'} to {len(m.get('to') or [])} + cc {len(m.get('cc') or [])} recipient(s)")
         except Exception as exc:  # 예외 메시지에 주소가 섞일 수 있어 타입만 출력
             failed += 1
             print(f"message {i}/{len(messages)}: FAILED ({type(exc).__name__})", file=sys.stderr)

@@ -3,7 +3,8 @@
 
 사용법: alert.py --subject "제목" --body "본문" [--link URL] [--dry-run]
 
-개인정보는 넣지 않는다(실패 사실과 GitHub Actions 링크만). 수신자는 GMAIL_USER.
+개인정보는 넣지 않는다(실패 사실과 GitHub Actions 링크만). 받는사람은 GMAIL_USER,
+참조는 환경변수 ALERT_CC(쉼표 구분, 선택 — GitHub Secret 으로 넣는다).
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ def main(argv=None) -> int:
     link_html = f'<p><a href="{html.escape(args.link)}">GitHub Actions 실행 기록 보기</a></p>' if args.link else ""
     message = {
         "to": [to],
+        "cc": [a.strip() for a in os.environ.get("ALERT_CC", "").split(",") if a.strip()],
         "subject": f"[지원제도 알리미] {args.subject}",
         "text": text,
         "html": f'<div style="font-family:sans-serif;line-height:1.6"><p>{body_html}</p>{link_html}</div>',

@@ -25,7 +25,8 @@
 | 이름 | 내용 |
 |---|---|
 | `PROFILE` | `schema/profile.schema.json` 형식의 YAML |
-| `RECIPIENTS` | 쉼표로 구분한 수신 이메일 |
+| `RECIPIENTS` | 받는사람 이메일(쉼표 구분) |
+| `CC` | 참조 이메일(쉼표 구분, 선택) — 한 통의 메일에 받는사람·참조로 함께 보낸다 |
 | `REPORT_PASSPHRASE` | 암호화 키 (GitHub Secret 과 동일) |
 | `PRIVACY_DENYLIST` | 쉼표로 구분한 금지어(실명, 실제 이메일, 상세 주소 등) |
 | `BRANCH` | 발행할 브랜치 |
@@ -172,7 +173,7 @@ report.json 을 다 쓴 뒤, 제도마다 공고 원문(`notice_url`, `sources`)
 ## 6. 발행
 
 ```bash
-export REPORT_PASSPHRASE RECIPIENTS PRIVACY_DENYLIST
+export REPORT_PASSPHRASE RECIPIENTS CC PRIVACY_DENYLIST
 benefit-radar/scripts/publish.sh "$WORK/report.json"        # outbox/<날짜>.json.enc, state/state.json.enc 생성
 git add benefit-radar/outbox benefit-radar/state
 printf 'chore(benefit-radar): weekly report %s\n' "$(TZ=Asia/Seoul date +%F)" > "$WORK/msg"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 주간 리포트 발행 파이프라인 (Routine 세션에서 실행).
 #
-#   REPORT_PASSPHRASE=... RECIPIENTS="a@example.com,b@example.com" \
+#   REPORT_PASSPHRASE=... RECIPIENTS="받는사람,..." [CC="참조,..."] \
 #     ./publish.sh <평문 report.json 경로(저장소 밖 임시 폴더)> [YYYY-MM-DD]
 #
 # 1) 암호화된 알림 이력(state) 복호화 → 2) 이력 병합(is_new, 누적 목록)
@@ -36,6 +36,8 @@ python3 "$here/state.py" merge --state "$tmp/state.json" --report "$tmp/report.j
 to_args=()
 IFS=',' read -ra rcpts <<< "$RECIPIENTS"
 for r in "${rcpts[@]}"; do r="$(echo "$r" | xargs)"; [ -n "$r" ] && to_args+=(--to "$r"); done
+IFS=',' read -ra ccs <<< "${CC:-}"
+for r in "${ccs[@]}"; do r="$(echo "$r" | xargs)"; [ -n "$r" ] && to_args+=(--cc "$r"); done
 
 python3 "$here/render_email.py" --report "$tmp/report.json" "${to_args[@]}" --today "$today" --out "$tmp/payload.json"
 python3 "$here/deliver.py" "$tmp/payload.json" --dry-run >/dev/null

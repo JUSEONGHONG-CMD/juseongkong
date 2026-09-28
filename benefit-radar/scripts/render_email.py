@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """report.json(schema/report.schema.json) -> 발송용 payload JSON.
 
-payload 형식: {"schema_version": "1.0", "messages": [{"to": [...], "subject": str, "text": str, "html": str}]}
+payload 형식: {"schema_version": "1.0", "messages": [{"to": [...], "cc": [...], "subject": str, "text": str, "html": str}]}
 
 표준 라이브러리만 사용한다. 개인정보가 담긴 내용을 표준출력에 찍지 않는다.
 
 사용법:
-  python3 render_email.py --report report.json --to a@example.com --to b@example.com --out payload.json
+  python3 render_email.py --report report.json --to a@example.com --cc b@example.com --out payload.json
 """
 from __future__ import annotations
 
@@ -488,7 +488,7 @@ def subject_for(report: dict, today: dt.date) -> str:
     return f"[지원제도 알리미] {today.isoformat()} 주간 리포트 - " + ", ".join(parts)
 
 
-def income_notice_message(report: dict, to: list[str], today: dt.date) -> dict:
+def income_notice_message(report: dict, to: list[str], today: dt.date, cc: list[str] | None = None) -> dict:
     ir = report["income_refresh"]
     labels = "·".join(report.get("member_labels", []))
     year = ir.get("target_year")
@@ -505,16 +505,17 @@ def income_notice_message(report: dict, to: list[str], today: dt.date) -> dict:
         f"대부분의 정부·지자체 제도는 직전연도 확정 소득으로 자격을 판정하기 때문에, 갱신 전까지는 "
         f"{e(ir.get('profile_year') or '이전')}년 소득 기준으로 판정됩니다.</p><p>{INCOME_HOWTO_HTML}</p></div>"
     )
-    return {"to": to, "subject": f"[지원제도 알리미] {year}년 연봉 재입력 요청", "text": text, "html": body}
+    return {"to": to, "cc": cc or [], "subject": f"[지원제도 알리미] {year}년 연봉 재입력 요청", "text": text, "html": body}
 
 
-def build_payload(report: dict, to: list[str], today: dt.date) -> dict:
+def build_payload(report: dict, to: list[str], today: dt.date, cc: list[str] | None = None) -> dict:
     validate(report)
     if not to:
         raise ReportError("at least one --to recipient is required")
     messages = [
         {
             "to": to,
+            "cc": cc or [],
             "subject": subject_for(report, today),
             "text": render_text(report, today),
             "html": render_html(report, today),
@@ -522,14 +523,15 @@ def build_payload(report: dict, to: list[str], today: dt.date) -> dict:
     ]
     ir = report.get("income_refresh") or {}
     if ir.get("required") and ir.get("send_separate_notice"):
-        messages.append(income_notice_message(report, to, today))
+        messages.append(income_notice_message(report, to, today, cc))
     return {"schema_version": "1.0", "messages": messages}
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--report", required=True, type=Path)
-    ap.add_argument("--to", action="append", default=[], help="수신자(여러 번 지정)")
+    ap.add_argument("--to", action="append", default=[], help="받는사람(여러 번 지정)")
+    ap.add_argument("--cc", action="append", default=[], help="참조(여러 번 지정)")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--today", help="기준일 YYYY-MM-DD (기본: 오늘, KST)")
     ap.add_argument("--preview-html", type=Path, help="HTML 미리보기 파일도 저장(로컬 확인용, 커밋 금지)")
@@ -538,7 +540,7 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(args.today) if args.today else dt.datetime.now(KST).date()
     report = json.loads(args.report.read_text(encoding="utf-8"))
     try:
-        payload = build_payload(report, args.to, today)
+        payload = build_payload(report, args.to, today, args.cc)
     except ReportError as exc:
         print(str(exc), file=sys.stderr)
         return 2

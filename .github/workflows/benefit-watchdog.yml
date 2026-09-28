@@ -44,6 +44,7 @@ jobs:
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_CC: ${{ secrets.ALERT_CC }}
           FOUND: ${{ steps.check.outputs.found }}
           TODAY: ${{ steps.check.outputs.today }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

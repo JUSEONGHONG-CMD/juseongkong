@@ -51,6 +51,7 @@
    | `GMAIL_USER` | 보내는 Gmail 주소 |
    | `GMAIL_APP_PASSWORD` | 1번의 앱 비밀번호 |
    | `REPORT_PASSPHRASE` | Claude가 알려주는 암호화 키 |
+   | `ALERT_CC` (선택) | 실패 알림을 참조로 함께 받을 주소(쉼표 구분) |
 3. **프로필 입력** — [`profile.example.yaml`](benefit-radar/profile.example.yaml) 항목을 Claude와의 대화로 알려주면 Routine 설정에만 저장합니다(파일로 커밋하지 않음).
 4. 회사 메일이 외부 발신 메일을 스팸 처리할 수 있으니, 첫 메일이 오면 발신 주소를 안전한 발신자로 등록하세요.
 
