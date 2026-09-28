@@ -83,7 +83,11 @@ state 파일이 없으면 첫 실행이다(모두 신규).
 
 - 새 제도뿐 아니라 **이미 알린 제도의 변경(기간 연장, 요건 완화, 마감)**도 확인한다.
 - 올해·다음 해 **제도 개편 발표**(예산안, 세법개정안)는 확정 전이면 `notes`에 "발표 단계"로만 적는다.
-- `WebFetch`가 네트워크 정책으로 막히면 `WebSearch` 결과(제목·스니펫·URL)로 판단하고, 막힌 도메인을 `search_limitations`에 적는다.
+- **페이지 읽기**: `WebFetch` 도구는 환경 허용 목록과 별개로 막힐 수 있으므로 기본은 세션 네트워크를 쓰는
+  `python3 benefit-radar/scripts/fetch.py text <URL>` 로 공고 본문을 읽는다(재시도 포함). 안 되면 `WebFetch`, 그래도 안 되면
+  `WebSearch` 결과(제목·스니펫·URL)로 판단하고, 접속 실패 도메인을 `search_limitations`에 적는다.
+- 일부 정부 사이트(`gov.kr`, `myhome.go.kr` 등)는 해외 접속을 끊는 경우가 있다. 같은 제도를 다른 공식 기관 페이지
+  (주관 부처, 복지로, 온통청년, 지자체)에서 확인한다.
 
 ### 4-2. 자격 판정 (핵심)
 각 후보 제도마다 공식 공고에서 요건을 항목별로 뽑아 프로필과 하나씩 대조한다.
@@ -111,7 +115,9 @@ state 파일이 없으면 첫 실행이다(모두 신규).
 
 링크 규칙:
 - 공식 도메인만: `*.go.kr`, 공공기관 `*.or.kr`, 지자체, 취급 금융기관, `applyhome.co.kr` 등. 블로그·뉴스·카페 링크는 쓰지 않는다.
-- `WebFetch`로 열어 해당 제도 페이지가 맞으면 `apply.verified: fetched`. 네트워크 정책으로 못 열면 WebSearch 결과에서 공식 도메인 URL로 확인됐을 때만 `search_result`. 둘 다 아니면 그 제도는 제외한다.
+- 발행 전 모든 신청·공고 링크를 `python3 benefit-radar/scripts/fetch.py check <URL...>` 로 확인한다.
+  `ok`/`redirect`이고 `fetch.py text`로 연 내용이 해당 제도 페이지가 맞으면 `apply.verified: fetched`.
+  접속이 끊기는 사이트면 WebSearch 결과에서 공식 도메인 URL로 확인됐을 때만 `search_result`. 둘 다 아니면 그 제도는 제외한다.
 
 공통 서류: 여러 제도에 쓰이는 서류(주민등록등본, 가족관계증명서, 소득금액증명원, 건강보험 자격득실확인서, 원천징수영수증 등)는 `common_documents`에 모으고 `used_by`에 제도 id를 적는다.
 

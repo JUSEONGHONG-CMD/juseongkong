@@ -61,6 +61,7 @@ Claude Code 세션에서 “연봉 갱신: 본인 ○○원, 배우자 ○○원
 | `benefit-radar/scripts/seal.sh` / `unseal.sh` | AES-256 암호화/복호화 (키 환경변수 지정 가능) |
 | `benefit-radar/scripts/deliver.py`, `channels/` | 알림 채널 어댑터(현재 이메일) |
 | `benefit-radar/scripts/check_privacy.sh` | 커밋 전 개인정보 유출 검사 |
+| `benefit-radar/scripts/fetch.py` | 공식 사이트 본문 읽기·링크 확인(재시도 포함) |
 | `.github/workflows/send-benefit-report.yml` | 복호화 후 메일 발송 |
 | `docs/ROADMAP.md` | 다른 사용자용 앱 확장 계획 |
 
