@@ -84,6 +84,11 @@ def validate(report: dict) -> None:
             errors.append(f"{where}: documents 또는 documents_note 필요")
         if not p.get("required_info"):
             errors.append(f"{where}: required_info(필요 정보) 필요")
+        ver = p.get("verification") or {}
+        for key, label in (("pass1", "1차 검토"), ("pass2", "2차 독립 검토")):
+            v = ver.get(key) or {}
+            if v.get("status") != "verified" or not v.get("sources_checked"):
+                errors.append(f"{where}: verification.{key}({label}) 통과 기록 필요")
     if errors:
         raise ReportError("report validation failed:\n  - " + "\n  - ".join(errors))
 
@@ -254,7 +259,7 @@ def _program_html(p: dict, today: dt.date) -> str:
     method = apply.get("method")
     offline = apply.get("offline_place")
     verified = VERIFIED_LABEL.get(apply.get("verified") or "", "")
-    badges = [STATUS_LABEL[p["status"]]]
+    badges = [STATUS_LABEL[p["status"]], "✔ 2중 검토 완료"]
     if p.get("is_new"):
         badges.append("🆕 신규")
     if p.get("change_note"):
@@ -390,6 +395,7 @@ def render_html(report: dict, today: dt.date) -> str:
 
     out.append(
         f'<div style="{MUTED};margin-top:20px">이 메일은 Benefit Radar가 공식 공고를 바탕으로 자동 작성했습니다. '
+        "모든 항목은 공식 출처로 2회(작성 후 자체 검토, 독립 검토) 확인했습니다. "
         "최종 자격은 반드시 공고 원문과 담당 기관에서 확인하세요.</div></div>"
     )
     return "\n".join(x for x in out if x)
@@ -458,7 +464,8 @@ def render_text(report: dict, today: dt.date) -> str:
         out += [_program_text(p, today), ""]
     for m in report.get("needs_more_info") or []:
         out.append(f"+ 정보 추가 요청: {m['field']} - {m['reason']}")
-    out += ["", "최종 자격은 반드시 공고 원문과 담당 기관에서 확인하세요."]
+    out += ["", "모든 항목은 공식 출처로 2회(작성 후 자체 검토, 독립 검토) 확인했습니다.",
+            "최종 자격은 반드시 공고 원문과 담당 기관에서 확인하세요."]
     return "\n".join(out)
 
 

@@ -1,7 +1,10 @@
 {
   "schema_version": "1.0",
   "generated_at": "2026-04-06T08:50:00+09:00",
-  "member_labels": ["본인", "배우자"],
+  "member_labels": [
+    "본인",
+    "배우자"
+  ],
   "income_refresh": {
     "required": true,
     "target_year": 2025,
@@ -15,8 +18,14 @@
       "url": "https://www.gov.kr",
       "online": true,
       "validity": "발급일 1개월 이내",
-      "who": ["본인", "배우자"],
-      "used_by": ["example-housing-loan", "example-city-rent-support"]
+      "who": [
+        "본인",
+        "배우자"
+      ],
+      "used_by": [
+        "example-housing-loan",
+        "example-city-rent-support"
+      ]
     }
   ],
   "programs": [
@@ -28,23 +37,76 @@
       "region_scope": "전국",
       "status": "after_marriage_registration",
       "summary": "예시 데이터입니다. 실제 제도가 아닙니다.",
-      "deadline": { "start": null, "end": null, "text": "상시" },
+      "deadline": {
+        "start": null,
+        "end": null,
+        "text": "상시"
+      },
       "criteria": [
-        { "requirement": "혼인 7년 이내 또는 3개월 내 결혼 예정", "household_value": "결혼 예정", "met": "after_marriage_registration", "note": null },
-        { "requirement": "부부합산 연소득 상한 이하", "household_value": "상한 이하", "met": "yes", "note": "갱신 전 2024년 소득 기준" }
+        {
+          "requirement": "혼인 7년 이내 또는 3개월 내 결혼 예정",
+          "household_value": "결혼 예정",
+          "met": "after_marriage_registration",
+          "note": null
+        },
+        {
+          "requirement": "부부합산 연소득 상한 이하",
+          "household_value": "상한 이하",
+          "met": "yes",
+          "note": "갱신 전 2024년 소득 기준"
+        }
       ],
-      "benefits": ["시중 전세대출 대비 연 이자 약 150만 원 절감(1억 원·금리차 1.5%p 가정)"],
-      "drawbacks": ["이용 중에는 다른 정책 전세대출과 중복 이용 불가"],
+      "benefits": [
+        "시중 전세대출 대비 연 이자 약 150만 원 절감(1억 원·금리차 1.5%p 가정)"
+      ],
+      "drawbacks": [
+        "이용 중에는 다른 정책 전세대출과 중복 이용 불가"
+      ],
       "documents": [
-        { "name": "가족관계증명서", "issuer": "정부24", "url": "https://www.gov.kr", "online": true, "validity": "발급일 1개월 이내", "who": ["본인"] }
+        {
+          "name": "가족관계증명서",
+          "issuer": "정부24",
+          "url": "https://www.gov.kr",
+          "online": true,
+          "validity": "발급일 1개월 이내",
+          "who": [
+            "본인"
+          ]
+        }
       ],
-      "required_info": ["임대차계약서 내용(보증금, 계약기간)", "재직 회사 정보"],
+      "required_info": [
+        "임대차계약서 내용(보증금, 계약기간)",
+        "재직 회사 정보"
+      ],
       "auth_required": "공동인증서 또는 간편인증",
-      "apply": { "url": "https://nhuf.molit.go.kr", "method": "온라인 사전심사 후 취급 은행 방문", "offline_place": "취급 은행 영업점", "verified": "search_result" },
+      "apply": {
+        "url": "https://nhuf.molit.go.kr",
+        "method": "온라인 사전심사 후 취급 은행 방문",
+        "offline_place": "취급 은행 영업점",
+        "verified": "search_result"
+      },
       "notice_url": "https://nhuf.molit.go.kr",
       "contact": "(예시) 콜센터",
-      "sources": ["https://nhuf.molit.go.kr"],
-      "conflicts_with": []
+      "sources": [
+        "https://nhuf.molit.go.kr"
+      ],
+      "conflicts_with": [],
+      "verification": {
+        "pass1": {
+          "status": "verified",
+          "sources_checked": [
+            "https://nhuf.molit.go.kr"
+          ],
+          "fixes": []
+        },
+        "pass2": {
+          "status": "verified",
+          "sources_checked": [
+            "https://nhuf.molit.go.kr"
+          ],
+          "issues": []
+        }
+      }
     },
     {
       "id": "example-city-rent-support",
@@ -54,25 +116,70 @@
       "region_scope": "(예시) OO시",
       "status": "eligible",
       "summary": "예시 데이터입니다. 실제 제도가 아닙니다.",
-      "deadline": { "start": "2026-04-01", "end": "2026-04-15", "text": null },
+      "deadline": {
+        "start": "2026-04-01",
+        "end": "2026-04-15",
+        "text": null
+      },
       "criteria": [
-        { "requirement": "만 19~39세", "household_value": "본인 해당", "met": "yes", "note": null }
+        {
+          "requirement": "만 19~39세",
+          "household_value": "본인 해당",
+          "met": "yes",
+          "note": null
+        }
       ],
-      "benefits": ["월 20만 원 × 12개월 = 최대 240만 원"],
-      "drawbacks": ["신혼부부 월세 지원과 중복 수혜 불가 — 결혼 후 더 유리한 제도로 갈아타기 어려움"],
+      "benefits": [
+        "월 20만 원 × 12개월 = 최대 240만 원"
+      ],
+      "drawbacks": [
+        "신혼부부 월세 지원과 중복 수혜 불가 — 결혼 후 더 유리한 제도로 갈아타기 어려움"
+      ],
       "documents": [],
       "documents_note": "공고에 서류 미기재 — 문의처: 시청 청년정책과",
-      "required_info": ["월세 계약 정보", "입금 받을 본인 명의 계좌"],
+      "required_info": [
+        "월세 계약 정보",
+        "입금 받을 본인 명의 계좌"
+      ],
       "auth_required": null,
-      "apply": { "url": "https://www.gov.kr", "method": "온라인", "offline_place": null, "verified": "fetched" },
+      "apply": {
+        "url": "https://www.gov.kr",
+        "method": "온라인",
+        "offline_place": null,
+        "verified": "fetched"
+      },
       "notice_url": "https://www.gov.kr",
       "contact": null,
-      "sources": ["https://www.gov.kr"]
+      "sources": [
+        "https://www.gov.kr"
+      ],
+      "verification": {
+        "pass1": {
+          "status": "verified",
+          "sources_checked": [
+            "https://www.gov.kr"
+          ],
+          "fixes": []
+        },
+        "pass2": {
+          "status": "verified",
+          "sources_checked": [
+            "https://www.gov.kr"
+          ],
+          "issues": []
+        }
+      }
     }
   ],
   "needs_more_info": [
-    { "field": "청약통장 납입 횟수", "reason": "청약 특별공급 자격 판정에 필요", "unlocks_count": 2 }
+    {
+      "field": "청약통장 납입 횟수",
+      "reason": "청약 특별공급 자격 판정에 필요",
+      "unlocks_count": 2
+    }
   ],
-  "notes": ["(예시) 혼인신고를 전세 계약 전에 하면 신혼부부 전용 상품 요건을 먼저 충족합니다."],
+  "notes": [
+    "(예시) 혼인신고를 전세 계약 전에 하면 신혼부부 전용 상품 요건을 먼저 충족합니다."
+  ],
   "search_limitations": []
 }

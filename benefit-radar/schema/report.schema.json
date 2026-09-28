@@ -4,44 +4,106 @@
   "title": "Benefit Radar 주간 리포트",
   "description": "채널과 무관한 구조화 결과. 이메일·앱 화면·푸시 알림이 모두 이 JSON을 렌더링한다. 개인정보가 들어 있으므로 저장소에는 암호화된 형태로만 올린다.",
   "type": "object",
-  "required": ["schema_version", "generated_at", "member_labels", "programs"],
+  "required": [
+    "schema_version",
+    "generated_at",
+    "member_labels",
+    "programs"
+  ],
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "generated_at": { "type": "string", "format": "date-time" },
-    "member_labels": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "member_labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
     "income_refresh": {
       "type": "object",
       "description": "연봉 재입력 알림",
       "properties": {
-        "required": { "type": "boolean" },
-        "target_year": { "type": "integer", "description": "새로 입력받아야 할 소득 귀속연도" },
-        "profile_year": { "type": ["integer", "null"], "description": "현재 프로필에 들어 있는 소득 귀속연도" },
-        "send_separate_notice": { "type": "boolean", "description": "이번 회차에 별도 알림 메일도 보낼지" }
+        "required": {
+          "type": "boolean"
+        },
+        "target_year": {
+          "type": "integer",
+          "description": "새로 입력받아야 할 소득 귀속연도"
+        },
+        "profile_year": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "현재 프로필에 들어 있는 소득 귀속연도"
+        },
+        "send_separate_notice": {
+          "type": "boolean",
+          "description": "이번 회차에 별도 알림 메일도 보낼지"
+        }
       }
     },
     "common_documents": {
       "type": "array",
       "description": "여러 제도에 공통으로 필요한 서류 묶음",
-      "items": { "$ref": "#/$defs/document" }
+      "items": {
+        "$ref": "#/$defs/document"
+      }
     },
     "programs": {
       "type": "array",
       "description": "자격 판정을 통과한 제도만 담는다. 불충족·판정불가 제도는 넣지 않는다.",
-      "items": { "$ref": "#/$defs/program" }
+      "items": {
+        "$ref": "#/$defs/program"
+      }
     },
     "cumulative": {
       "type": "array",
       "description": "지금까지 알린 제도 중 아직 유효한 것 요약",
       "items": {
         "type": "object",
-        "required": ["id", "name"],
+        "required": [
+          "id",
+          "name"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "status": { "enum": ["eligible", "after_marriage_registration"] },
-          "deadline_text": { "type": ["string", "null"] },
-          "apply_url": { "type": ["string", "null"] },
-          "first_notified": { "type": ["string", "null"], "format": "date" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "eligible",
+              "after_marriage_registration"
+            ]
+          },
+          "deadline_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "apply_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_notified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          }
         }
       }
     },
@@ -50,83 +112,379 @@
       "description": "정보가 부족해 판정하지 못한 부분. 제도 이름은 나열하지 않고, 어떤 정보를 추가하면 몇 건을 더 판정할 수 있는지만 알린다.",
       "items": {
         "type": "object",
-        "required": ["field", "reason"],
+        "required": [
+          "field",
+          "reason"
+        ],
         "properties": {
-          "field": { "type": "string" },
-          "reason": { "type": "string" },
-          "unlocks_count": { "type": "integer", "minimum": 0 }
+          "field": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "unlocks_count": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
     },
-    "notes": { "type": "array", "items": { "type": "string" }, "description": "혼인신고 타이밍 등 참고 메모" },
-    "search_limitations": { "type": "array", "items": { "type": "string" }, "description": "접속 불가 사이트 등 이번 조사의 한계" }
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "혼인신고 타이밍 등 참고 메모"
+    },
+    "search_limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "접속 불가 사이트 등 이번 조사의 한계"
+    }
   },
   "$defs": {
     "document": {
       "type": "object",
-      "required": ["name", "issuer"],
+      "required": [
+        "name",
+        "issuer"
+      ],
       "properties": {
-        "name": { "type": "string" },
-        "issuer": { "type": "string", "description": "발급처(정부24, 홈택스, 건강보험공단 등)" },
-        "url": { "type": ["string", "null"], "description": "발급 링크" },
-        "online": { "type": ["boolean", "null"] },
-        "validity": { "type": ["string", "null"], "description": "예: 발급일 1개월 이내" },
-        "who": { "type": "array", "items": { "type": "string" }, "description": "발급해야 하는 구성원 label" },
-        "used_by": { "type": "array", "items": { "type": "string" }, "description": "이 서류가 필요한 program id" }
+        "name": {
+          "type": "string"
+        },
+        "issuer": {
+          "type": "string",
+          "description": "발급처(정부24, 홈택스, 건강보험공단 등)"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "발급 링크"
+        },
+        "online": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "validity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "예: 발급일 1개월 이내"
+        },
+        "who": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "발급해야 하는 구성원 label"
+        },
+        "used_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "이 서류가 필요한 program id"
+        }
       }
     },
     "criterion": {
       "type": "object",
-      "required": ["requirement", "household_value", "met"],
+      "required": [
+        "requirement",
+        "household_value",
+        "met"
+      ],
       "properties": {
-        "requirement": { "type": "string", "description": "공고상 요건" },
-        "household_value": { "type": "string", "description": "우리 가구의 해당 값" },
-        "met": { "enum": ["yes", "after_marriage_registration"] },
-        "note": { "type": ["string", "null"] }
+        "requirement": {
+          "type": "string",
+          "description": "공고상 요건"
+        },
+        "household_value": {
+          "type": "string",
+          "description": "우리 가구의 해당 값"
+        },
+        "met": {
+          "enum": [
+            "yes",
+            "after_marriage_registration"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "program": {
       "type": "object",
-      "required": ["id", "name", "agency", "status", "summary", "criteria", "benefits", "drawbacks", "apply", "notice_url", "required_info"],
+      "required": [
+        "id",
+        "name",
+        "agency",
+        "status",
+        "summary",
+        "criteria",
+        "benefits",
+        "drawbacks",
+        "apply",
+        "notice_url",
+        "required_info",
+        "verification"
+      ],
       "properties": {
-        "id": { "type": "string", "description": "사용자와 무관한 안정적 제도 식별자(예: molit-beotimmok-newlywed)" },
-        "name": { "type": "string" },
-        "agency": { "type": "string", "description": "주관 기관" },
-        "category": { "enum": ["housing", "loan", "savings", "tax", "employment", "wedding", "childbirth", "health", "culture", "transport", "education", "cash", "other"] },
-        "region_scope": { "type": ["string", "null"], "description": "전국 또는 지자체명" },
-        "status": { "enum": ["eligible", "after_marriage_registration"] },
-        "is_new": { "type": "boolean" },
-        "change_note": { "type": ["string", "null"], "description": "이전 알림 대비 바뀐 점" },
-        "summary": { "type": "string" },
+        "id": {
+          "type": "string",
+          "description": "사용자와 무관한 안정적 제도 식별자(예: molit-beotimmok-newlywed)"
+        },
+        "name": {
+          "type": "string"
+        },
+        "agency": {
+          "type": "string",
+          "description": "주관 기관"
+        },
+        "category": {
+          "enum": [
+            "housing",
+            "loan",
+            "savings",
+            "tax",
+            "employment",
+            "wedding",
+            "childbirth",
+            "health",
+            "culture",
+            "transport",
+            "education",
+            "cash",
+            "other"
+          ]
+        },
+        "region_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "전국 또는 지자체명"
+        },
+        "status": {
+          "enum": [
+            "eligible",
+            "after_marriage_registration"
+          ]
+        },
+        "is_new": {
+          "type": "boolean"
+        },
+        "change_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "이전 알림 대비 바뀐 점"
+        },
+        "summary": {
+          "type": "string"
+        },
         "deadline": {
           "type": "object",
           "properties": {
-            "start": { "type": ["string", "null"], "format": "date" },
-            "end": { "type": ["string", "null"], "format": "date" },
-            "text": { "type": ["string", "null"], "description": "상시, 예산 소진 시 마감 등" }
+            "start": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date"
+            },
+            "end": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date"
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "상시, 예산 소진 시 마감 등"
+            }
           }
         },
-        "criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/criterion" } },
-        "benefits": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "신청 시 이득(가능하면 금액 환산)" },
-        "drawbacks": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "신청 시 손해·주의점" },
-        "documents": { "type": "array", "items": { "$ref": "#/$defs/document" } },
-        "documents_note": { "type": ["string", "null"], "description": "공고에 서류가 없을 때: 미기재 + 문의처" },
-        "required_info": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-        "auth_required": { "type": ["string", "null"], "description": "공동인증서/간편인증 등" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        },
+        "benefits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "신청 시 이득(가능하면 금액 환산)"
+        },
+        "drawbacks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "신청 시 손해·주의점"
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/document"
+          }
+        },
+        "documents_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "공고에 서류가 없을 때: 미기재 + 문의처"
+        },
+        "required_info": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "auth_required": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "공동인증서/간편인증 등"
+        },
         "apply": {
           "type": "object",
-          "required": ["url"],
+          "required": [
+            "url"
+          ],
           "properties": {
-            "url": { "type": "string", "description": "실제 신청 페이지" },
-            "method": { "type": ["string", "null"], "description": "온라인/방문/은행 창구" },
-            "offline_place": { "type": ["string", "null"] },
-            "verified": { "enum": ["fetched", "search_result", "unverified"], "description": "링크 확인 방식" }
+            "url": {
+              "type": "string",
+              "description": "실제 신청 페이지"
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "온라인/방문/은행 창구"
+            },
+            "offline_place": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verified": {
+              "enum": [
+                "fetched",
+                "search_result",
+                "unverified"
+              ],
+              "description": "링크 확인 방식"
+            }
           }
         },
-        "notice_url": { "type": "string", "description": "공고 원문" },
-        "contact": { "type": ["string", "null"], "description": "문의처" },
-        "sources": { "type": "array", "items": { "type": "string" } },
-        "conflicts_with": { "type": "array", "items": { "type": "string" }, "description": "중복 신청 불가 program id" }
+        "notice_url": {
+          "type": "string",
+          "description": "공고 원문"
+        },
+        "contact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "문의처"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicts_with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "중복 신청 불가 program id"
+        },
+        "verification": {
+          "type": "object",
+          "required": [
+            "pass1",
+            "pass2"
+          ],
+          "description": "발행 전 2중 검토 기록",
+          "properties": {
+            "pass1": {
+              "$ref": "#/$defs/verification_pass",
+              "description": "작성자 자체 검증"
+            },
+            "pass2": {
+              "$ref": "#/$defs/verification_pass",
+              "description": "독립 검토자(서브에이전트) 검증"
+            }
+          }
+        }
+      }
+    },
+    "verification_pass": {
+      "type": "object",
+      "required": [
+        "status",
+        "sources_checked"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "verified",
+            "failed",
+            "unverifiable"
+          ]
+        },
+        "sources_checked": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "fixes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "1차 검토에서 고친 내용"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "2차 검토에서 지적되어 고친 내용"
+        }
       }
     }
   }

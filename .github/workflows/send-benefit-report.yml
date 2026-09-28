@@ -74,3 +74,18 @@ jobs:
             rm -f "$work/payload.json"
           done < "$RUNNER_TEMP/files.txt"
           exit $status
+
+      - name: Alert owner on failure
+        if: failure()
+        shell: bash
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +x
+          echo "::add-mask::$GMAIL_USER"
+          python3 benefit-radar/scripts/alert.py \
+            --subject "이번 주 리포트 발송 실패" \
+            --body "주간 리포트를 이메일로 보내는 단계에서 오류가 났습니다. 리포트는 만들어졌지만 메일이 발송되지 않았을 수 있습니다. Claude Code 세션에서 '리포트 발송 실패 확인해줘'라고 말하면 원인을 찾아 다시 보냅니다." \
+            --link "$RUN_URL"

@@ -1,0 +1,60 @@
+name: benefit-watchdog
+
+# 월요일 주간 리포트가 만들어지지 않았으면(조사·발행 단계 실패) 소유자 Gmail로 알린다.
+# 리포트는 월요일 06:43 KST에 시작해 7시 반 전후로 발송되므로 09:00 KST에 확인한다.
+# 개인정보는 다루지 않는다(파일 존재 여부만 확인).
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 매주 월 00:00 UTC = 09:00 KST
+  workflow_dispatch:
+    inputs:
+      force_alert:
+        description: "테스트용: 결과와 관계없이 알림 메일 보내기"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check this week's report
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          today="$(TZ=Asia/Seoul date +%F)"
+          if ls benefit-radar/outbox/"$today"*.enc >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "report for $today: found"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "report for $today: missing"
+          fi
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+
+      - name: Alert owner
+        if: steps.check.outputs.found != 'true' || github.event.inputs.force_alert == 'true'
+        shell: bash
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          FOUND: ${{ steps.check.outputs.found }}
+          TODAY: ${{ steps.check.outputs.today }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +x
+          echo "::add-mask::$GMAIL_USER"
+          if [ "$FOUND" = "true" ]; then
+            subject="알림 테스트 ($TODAY)"
+            body="실패 알림 테스트 메일입니다. 이번 주 리포트는 정상적으로 만들어졌습니다."
+          else
+            subject="이번 주 리포트가 도착하지 않았어요 ($TODAY)"
+            body="오늘 오전 9시까지 이번 주 지원제도 리포트가 만들어지지 않았습니다. 조사 단계에서 오류가 났거나 예약 작업이 실행되지 않았을 수 있습니다. Claude Code 세션에서 '이번 주 리포트 다시 실행해줘'라고 말하면 바로 다시 조사해 보냅니다."
+          fi
+          python3 benefit-radar/scripts/alert.py --subject "$subject" --body "$body" --link "$RUN_URL"
