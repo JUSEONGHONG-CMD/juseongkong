@@ -121,6 +121,81 @@ def deadline_text(program: dict, today: dt.date) -> str:
     return " / ".join(parts) if parts else "공고 확인 필요"
 
 
+WEEKDAYS = "월화수목금토일"
+
+
+def fmt_date(d: dt.date) -> str:
+    return f"{d.isoformat()}({WEEKDAYS[d.weekday()]})"
+
+
+def deadline_info(program: dict, today: dt.date) -> dict:
+    """마감 강조 표시용 정보: label(표시 문구), dday, level(urgent|soon|normal|open|closed)."""
+    d = program.get("deadline") or {}
+    end = _parse_date(d.get("end"))
+    note = d.get("text")
+    if end is None:
+        return {"label": note or "상시 (마감일 없음)", "dday": None, "level": "open", "end": None}
+    left = (end - today).days
+    if left < 0:
+        return {"label": f"{fmt_date(end)} 마감됨", "dday": None, "level": "closed", "end": end}
+    level = "urgent" if left <= 7 else "soon" if left <= 30 else "normal"
+    dday = "D-DAY" if left == 0 else f"D-{left}"
+    label = fmt_date(end) + (f" · {note}" if note else "")
+    return {"label": label, "dday": dday, "level": level, "end": end}
+
+
+DEADLINE_STYLE = {
+    "urgent": ("#fee2e2", "#b91c1c", "#dc2626"),
+    "soon": ("#ffedd5", "#9a3412", "#ea580c"),
+    "normal": ("#dbeafe", "#1e3a8a", "#2563eb"),
+    "open": ("#f3f4f6", "#374151", "#9ca3af"),
+    "closed": ("#f3f4f6", "#6b7280", "#9ca3af"),
+}
+
+
+def _deadline_banner_html(p: dict, today: dt.date) -> str:
+    info = deadline_info(p, today)
+    bg, fg, border = DEADLINE_STYLE[info["level"]]
+    dday = (f'<span style="background:{border};color:#fff;border-radius:6px;padding:2px 10px;margin-left:8px;'
+            f'font-size:16px">{e(info["dday"])}</span>') if info["dday"] else ""
+    start = (p.get("deadline") or {}).get("start")
+    start_html = f'<div style="font-size:12px;margin-top:2px">접수 시작: {e(start)}</div>' if start else ""
+    return (f'<div style="background:{bg};color:{fg};border-left:6px solid {border};border-radius:8px;'
+            f'padding:10px 12px;margin:8px 0 10px">'
+            f'<div style="font-size:12px;font-weight:700;letter-spacing:.5px">📅 신청 마감</div>'
+            f'<div style="font-size:19px;font-weight:800;margin-top:2px">{e(info["label"])}{dday}</div>'
+            f'{start_html}</div>')
+
+
+def _deadline_sort_key(p: dict):
+    end = _parse_date((p.get("deadline") or {}).get("end"))
+    return (end is None, end or dt.date.max, p.get("name", ""))
+
+
+def _deadline_overview_html(programs: list, today: dt.date) -> str:
+    if not programs:
+        return ""
+    rows = []
+    for p in sorted(programs, key=_deadline_sort_key):
+        info = deadline_info(p, today)
+        if info["level"] == "closed":
+            continue
+        _, fg, border = DEADLINE_STYLE[info["level"]]
+        dday = f'<b style="color:{border}">{e(info["dday"])}</b>' if info["dday"] else '<span style="color:#6b7280">상시</span>'
+        rows.append(
+            f"<tr><td style='padding:6px 8px;border-bottom:1px solid #f3f4f6'>{_link(p['apply']['url'], p['name'])}</td>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #f3f4f6;color:{fg};font-weight:700'>{e(info['label'])}</td>"
+            f"<td style='padding:6px 8px;border-bottom:1px solid #f3f4f6;white-space:nowrap'>{dday}</td></tr>"
+        )
+    if not rows:
+        return ""
+    return (f'<div style="{H2}">📅 신청 마감 일정 한눈에</div><div style="{CARD}">'
+            '<table style="border-collapse:collapse;width:100%;font-size:14px">'
+            '<tr style="background:#f9fafb"><th style="text-align:left;padding:6px 8px">제도</th>'
+            '<th style="text-align:left;padding:6px 8px">마감일</th><th style="text-align:left;padding:6px 8px">남은 기간</th></tr>'
+            + "".join(rows) + "</table></div>")
+
+
 def _link(url, label) -> str:
     if not _is_url(url):
         return e(label)
@@ -188,9 +263,9 @@ def _program_html(p: dict, today: dt.date) -> str:
 <div style="{CARD}">
   <div style="{MUTED}">{e(' · '.join(badges))} · {e(p.get('agency'))}{(' · ' + e(p['region_scope'])) if p.get('region_scope') else ''}</div>
   <div style="font-size:17px;font-weight:700;margin:4px 0 6px">{e(p['name'])}</div>
+  {_deadline_banner_html(p, today)}
   <div>{e(p['summary'])}</div>
   {f"<div style='margin-top:6px;color:#b45309'>변경 사항: {e(p['change_note'])}</div>" if p.get('change_note') else ''}
-  <div style="margin-top:8px"><b>신청 기간</b>: {e(deadline_text(p, today))}</div>
   <div style="margin-top:12px"><b>왜 우리에게 해당되나요?</b></div>
   <table style="border-collapse:collapse;width:100%;font-size:13px;margin-top:4px">
     <tr style="background:#f9fafb"><th style="text-align:left;padding:4px 8px">요건</th><th style="text-align:left;padding:4px 8px">우리 조건</th><th style="text-align:left;padding:4px 8px">판정</th></tr>
@@ -252,6 +327,8 @@ def render_html(report: dict, today: dt.date) -> str:
         f'<div style="{MUTED}">{e(today.isoformat())} 기준 · 대상: {e(" · ".join(report.get("member_labels", [])))}</div>',
         _income_banner_html(report),
     ]
+
+    out.append(_deadline_overview_html(programs, today))
 
     common = report.get("common_documents") or []
     if common:
@@ -327,7 +404,8 @@ def _program_text(p: dict, today: dt.date) -> str:
     ]
     if p.get("change_note"):
         lines.append(f"  변경 사항: {p['change_note']}")
-    lines.append(f"  신청 기간: {deadline_text(p, today)}")
+    info = deadline_info(p, today)
+    lines.insert(1, f"  ★ 신청 마감: {info['label']}" + (f" ({info['dday']})" if info["dday"] else "") + " ★")
     lines.append("  왜 해당되나요?")
     lines += [
         f"   - {c['requirement']} → {c['household_value']} ({'충족' if c['met'] == 'yes' else '혼인신고 후 충족'})"
@@ -362,6 +440,13 @@ def render_text(report: dict, today: dt.date) -> str:
             INCOME_HOWTO_TEXT,
             "",
         ]
+    if programs:
+        out.append("[신청 마감 일정]")
+        for p in sorted(programs, key=_deadline_sort_key):
+            info = deadline_info(p, today)
+            if info["level"] != "closed":
+                out.append(f"- {p['name']}: {info['label']}" + (f" ({info['dday']})" if info["dday"] else ""))
+        out.append("")
     common = report.get("common_documents") or []
     if common:
         out.append("[이번 주 한 번에 떼두면 좋은 서류]")
@@ -386,6 +471,11 @@ def subject_for(report: dict, today: dt.date) -> str:
     parts = [f"신규 {new_count}건"]
     if closing:
         parts.append(f"마감임박 {closing}건")
+    upcoming = sorted(
+        (i for i in (deadline_info(p, today) for p in programs) if i["dday"]), key=lambda i: i["end"]
+    )
+    if upcoming:
+        parts.append(f"가장 빠른 마감 {upcoming[0]['end'].month}/{upcoming[0]['end'].day}({upcoming[0]['dday']})")
     if (report.get("income_refresh") or {}).get("required"):
         parts.append("연봉 재입력 필요")
     return f"[지원제도 알리미] {today.isoformat()} 주간 리포트 - " + ", ".join(parts)
