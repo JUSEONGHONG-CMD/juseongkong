@@ -14,6 +14,7 @@ state 형식:
 사용법:
   state.py init  --state state.json
   state.py known --state state.json              # 알린 제도 id·이름·마감 목록(판정 시 중복 확인용)
+  state.py drop  --state state.json --id <program id> [--id ...]   # 더 이상 해당되지 않는 제도를 이력·누적 목록에서 제거
   state.py merge --state state.json --report report.json [--today YYYY-MM-DD]
       → report.programs 의 is_new 를 이력 기준으로 보정하고, report.cumulative 를 채우고,
         state 를 갱신한다(두 파일 모두 덮어씀).
@@ -101,7 +102,8 @@ def merge(state: dict, report: dict, today: dt.date) -> tuple[dict, dict]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["init", "known", "merge"])
+    ap.add_argument("cmd", choices=["init", "known", "drop", "merge"])
+    ap.add_argument("--id", action="append", default=[], help="drop 대상 program id")
     ap.add_argument("--state", required=True, type=Path)
     ap.add_argument("--report", type=Path)
     ap.add_argument("--today")
@@ -119,6 +121,12 @@ def main(argv=None) -> int:
         for pid, n in state.get("notified", {}).items():
             print(f"{pid}\t{n.get('name')}\t{n.get('status')}\t{n.get('deadline_end') or n.get('deadline_text') or ''}")
         print(f"# income_notice_sent_for_year={state.get('income_notice_sent_for_year')}")
+        return 0
+    if args.cmd == "drop":
+        notified = state.get("notified", {})
+        removed = [i for i in args.id if notified.pop(i, None) is not None]
+        save(args.state, state)
+        print(f"dropped {len(removed)} of {len(args.id)} program(s)")
         return 0
     if not args.report:
         print("--report required", file=sys.stderr)
