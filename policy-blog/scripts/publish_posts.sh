@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # 정책 블로그 원고 발행 파이프라인 (Routine 세션에서 실행).
 #
-#   REPORT_PASSPHRASE=... RECIPIENTS="받는사람,..." [CC="참조,..."] [PRIVACY_DENYLIST=...] \
+#   REPORT_PASSPHRASE=... RECIPIENTS="받는사람,..." [CC="참조,..."] [PRIVACY_DENYLIST=...] [TEST_MODE=1] \
 #     ./publish_posts.sh <평문 posts.json 경로(저장소 밖 임시 폴더)> [YYYY-MM-DD]
 #
 # 1) 암호화된 이력 복호화 → 2) 중복 제거·kind 보정 → 3) 검증 + 메일 payload 렌더링
 # 4) payload·이력을 암호화해 benefit-radar/outbox, benefit-radar/state 에 저장 (기존 발송 워크플로가 그대로 메일을 보냄)
+#    썸네일 PNG 는 <저장소>/public/<날짜>/<id>/01_thumb.png 에 만든다. 메일 본문이 이 공개 주소를 가리키므로
+#    호출자는 **public/ 을 먼저 commit·push 한 뒤** outbox/state 를 push 해야 한다(INSTRUCTIONS 7장).
+# TEST_MODE=1 이면 제목에 [시험]을 붙이고 이력(state)을 갱신하지 않는다(형식 확인용).
 # 새 원고가 없으면 아무것도 만들지 않고 종료 코드 3 으로 끝난다(메일 없음, 커밋할 것 없음).
 set -euo pipefail
 set +x
@@ -45,13 +48,22 @@ for r in "${rcpts[@]}"; do r="$(echo "$r" | xargs)"; [ -n "$r" ] && to_args+=(--
 IFS=',' read -ra ccs <<< "${CC:-}"
 for r in "${ccs[@]}"; do r="$(echo "$r" | xargs)"; [ -n "$r" ] && to_args+=(--cc "$r"); done
 
-python3 "$here/render_posts.py" --posts "$tmp/posts.json" "${to_args[@]}" --today "$today" --out "$tmp/payload.json"
+# 썸네일(공개 주소용). Pillow·한글 글꼴이 없으면 건너뛰고 썸네일 없이 진행한다.
+python3 "$here/make_thumb.py" --posts "$tmp/posts.json" --out-dir "$root/public" --today "$today" || true
+if [ -z "${PUBLIC_BASE_URL:-}" ]; then
+  remote="$(git -C "$root" remote get-url origin | sed -E 's#(\.git)?$##; s#^.*github\.com[:/]##')"
+  branch="$(git -C "$root" rev-parse --abbrev-ref HEAD)"
+  PUBLIC_BASE_URL="https://raw.githubusercontent.com/$remote/refs/heads/$branch/public"
+fi
+test_args=(); [ "${TEST_MODE:-}" = "1" ] && test_args+=(--test)
+python3 "$here/render_posts.py" --posts "$tmp/posts.json" "${to_args[@]}" --today "$today" --out "$tmp/payload.json" \
+  --public-base "$PUBLIC_BASE_URL" --thumb-dir "$root/public" ${test_args[@]+"${test_args[@]}"}
 python3 "$radar/deliver.py" "$tmp/payload.json" --dry-run >/dev/null
 
 out="$root/benefit-radar/outbox/blog-$today.json.enc"
 if [ -e "$out" ]; then out="$root/benefit-radar/outbox/blog-$today-$(date +%H%M%S).json.enc"; fi
 "$radar/seal.sh" "$tmp/payload.json" "$out"
-"$radar/seal.sh" "$tmp/state.json" "$state_enc"
+if [ "${TEST_MODE:-}" != "1" ]; then "$radar/seal.sh" "$tmp/state.json" "$state_enc"; fi
 
 "$radar/unseal.sh" "$out" "$tmp/check.json"
 cmp -s "$tmp/payload.json" "$tmp/check.json" || { echo "publish_posts: seal round-trip mismatch" >&2; exit 1; }

@@ -91,24 +91,30 @@ python3 benefit-radar/scripts/deliver.py $W/payload.json --dry-run
 새로 나왔거나 바뀐 정부·지자체 정책을 찾아, **대표 인물 4명(가상: 청년 1인 가구 / 신혼부부 / 영유아 양육 가구 / 소득이 적은 시니어)**의 사례를 넣은 블로그 원고를 메일로 보내는 프로그램입니다.
 
 - 주 2회(화·금 오전) 새 정책·변경 정책을 확인하고, 없으면 메일을 보내지 않습니다. 한 번에 최대 3건.
-- 원고마다 요건 표, 인물별 사례(예상 혜택에 계산 가정 표기), 좋은 점·아쉬운 점, 신청 방법·링크, 서류, **마감일**, 출처, 해시태그를 넣습니다. 메일에 블로그 본문(복사용)과 마크다운 원문이 함께 들어 있습니다. 자동 게시는 하지 않습니다.
+- 원고마다 요약표, 요건, 인물별 사례(예상 혜택에 계산 가정 표기), 좋은 점·아쉬운 점, 신청 방법·링크, 서류, **마감일**, 출처, 해시태그를 넣습니다. 메일에는 노란 발행 정보 상자(카테고리·제목·태그 쉼표 목록·예약 시각·검증 메모·발행 전 점검표), 붙여넣을 블로그 본문, 마크다운 원문, 썸네일 PNG 첨부가 들어 있습니다. 자동 게시는 하지 않습니다.
+- 검색 노출 규칙(`policy-blog/WRITING_GUIDE.md`)을 코드로 검사합니다: 제목·첫 문장이 정책 이름으로 시작, 과장 표현 금지, 태그 20개 이하, 당일 마감 제외, 맞춤법·조사 점검, 1080×1080 썸네일(공개 주소로 본문에 삽입, 메일보다 먼저 push).
 - 공개되는 글이라 Benefit Radar 와 같은 **2중 검토**(작성자 자체 검토 + 독립 서브에이전트)를 거치고, 렌더러가 검토 미통과·비공식 링크·금지어를 거부합니다.
 - 이 프로그램은 특정인의 프로필을 읽지 않으며, 원고에는 `policy-blog/personas.json` 의 가상 인물만 나옵니다. 발송은 Benefit Radar 의 암호화·GitHub Actions 파이프라인을 그대로 씁니다.
 
 | 파일 | 역할 |
 |---|---|
 | `policy-blog/INSTRUCTIONS.md` | Routine 이 따르는 절차 |
+| `policy-blog/WRITING_GUIDE.md` | 블로그 조회수 규칙(근거 수준 표시) |
+| `policy-blog/blog_config.json` | 고정 태그·카테고리·예약 시각·금지 표현·점검표 |
 | `policy-blog/personas.json` | 대표 인물 4명(가상) |
 | `policy-blog/schema/posts.schema.json` | 원고 데이터 형식 |
 | `policy-blog/scripts/render_posts.py` | 검증 + 블로그 본문(HTML·마크다운) + 메일 payload |
+| `policy-blog/scripts/make_thumb.py` | 정책별 썸네일 PNG(`public/` 에 저장) |
 | `policy-blog/scripts/blog_state.py` | 이미 쓴 정책 이력(중복·변경 감지) |
 | `policy-blog/scripts/publish_posts.sh` | 이력 병합 → 렌더링 → 암호화 저장 |
 | `policy-blog/examples/sample-posts.json` | 가짜 예시 데이터 |
 
 ```bash
 W=$(mktemp -d); cp policy-blog/examples/sample-posts.json $W/posts.json
+python3 policy-blog/scripts/make_thumb.py --posts $W/posts.json --out-dir $W/public
 python3 policy-blog/scripts/render_posts.py --posts $W/posts.json --to a@example.com \
-  --out $W/payload.json --preview-html $W/preview.html
+  --out $W/payload.json --preview-html $W/preview.html --thumb-dir $W/public \
+  --public-base https://raw.githubusercontent.com/OWNER/REPO/refs/heads/BRANCH/public --test
 python3 benefit-radar/scripts/deliver.py $W/payload.json --dry-run
 ```
 

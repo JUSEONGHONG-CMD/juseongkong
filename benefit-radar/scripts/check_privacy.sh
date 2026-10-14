@@ -23,6 +23,14 @@ while IFS= read -r p; do
   esac
 done <<< "$paths"
 
+# 1-1) public/ (블로그 썸네일 공개 주소)에는 PNG 이미지만 허용
+while IFS= read -r p; do
+  [ -z "$p" ] && continue
+  case "$p" in
+    public/*) case "$p" in *.png) ;; *) report "non-image file in public/: $p" ;; esac ;;
+  esac
+done <<< "$paths"
+
 # 2) 암호문 파일은 openssl base64 헤더(U2FsdGVkX1)로 시작해야 함
 while IFS= read -r p; do
   case "$p" in

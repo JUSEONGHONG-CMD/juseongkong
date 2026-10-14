@@ -75,14 +75,19 @@ benefit-radar/scripts/unseal.sh benefit-radar/state/blog-state.json.enc "$WORK/s
 
 ## 5. 원고 쓰기 (`$WORK/posts.json`)
 
+**검색 노출 규칙은 `policy-blog/WRITING_GUIDE.md` 를 따른다**(제목·첫 문장·한 줄 요약·태그·표 규칙; 렌더러가 상당 부분을 검사한다).
 형식은 `policy-blog/schema/posts.schema.json`, 예시는 `policy-blog/examples/sample-posts.json`(가짜 데이터). 본문 구조(한눈에 보기 → 요건 표 → 인물 사례 → 좋은 점/아쉬운 점 → 신청 방법 → 서류 → 마무리 → 면책·출처·해시태그)는 렌더러가 만든다. 모델은 구조화된 필드를 채운다.
+
+새 필드(모두 필수): `search_name`(정책의 짧은 고유명사), `one_liner`(정책 이름으로 시작하는 한 줄 요약: 대상·금액·마감 포함), `target_short`·`support_short`·`method_short`(요약표 칸, 각 20자 안팎). 선택: `related`(다루지 못한 관련 정책 이름 + 속성 한 줄, 최대 6), `thumb_action`(썸네일 행동 문장, 판정이 불확실하면 "확인해 보세요").
 
 글쓰기 규칙:
 - 어투는 친근한 정보 전달체(~해요). 과장·낚시 제목(“무조건”, “난리 났다”)과 광고성 표현 금지.
 - **좋은 점과 아쉬운 점을 모두** 쓴다(“특별히 없음” 금지: 중복수혜 제한, 의무 유지기간, 환수, 소득 증가 시 불이익, 신청 시간 등).
 - **마감일을 공고 원문에서 반드시 찾아** `deadline.end` 에 넣는다. 상시·예산 소진이면 `text` 에 그대로 쓴다.
 - 공식 문서의 문장을 그대로 길게 옮기지 않고 요약한다. 금액·비율·날짜는 공식 수치 그대로.
-- 제목은 정책 이름과 대상이 드러나게(예: “월세 사는 청년이라면: 청년 월세 특별지원 총정리”).
+- **제목은 `search_name` 으로 시작**하고, 그다음 검색 속성(자격·지원금·마감일·신청 방법), 날짜는 맨 뒤 괄호(예: “청년 월세 특별지원 신청 자격·지원금·마감일 총정리 (10/14)”). `one_liner` 와 `intro` 도 정책 이름으로 시작한다. 글마다 제목이 달라야 하고 과장 표현은 금지.
+- `hashtags` 는 이번 글의 정책 이름·주제·월 태그 2~14개(고정 태그 6개는 자동 추가, 합계 20개 이하). 무관한 인기 키워드는 넣지 않는다.
+- **마감이 오늘이거나 이미 지난 정책은 쓰지 않는다**(렌더러가 거부).
 - `documents` 가 공고에 없으면 `documents_note` 에 “공고에 서류 미기재 — 문의처: …”.
 - `apply_url`, `notice_url` 은 공식 도메인만. 발행 전 `python3 benefit-radar/scripts/fetch.py check <URL...>` 로 열린다는 것을 확인한다(접속 불가 사이트는 WebSearch 결과에서 공식 도메인 URL임을 확인).
 - 정책 id 는 `<기관>-<제도>[-지역]` kebab-case, 같은 정책은 항상 같은 id.
@@ -109,23 +114,40 @@ benefit-radar/scripts/unseal.sh benefit-radar/state/blog-state.json.enc "$WORK/s
 
 ## 7. 발행
 
+썸네일은 공개 주소(저장소 `public/`)로 본문에 들어가므로 **이미지를 먼저 push 하고, 그다음 메일 파일(outbox)을 push** 한다.
+
 ```bash
 export REPORT_PASSPHRASE RECIPIENTS CC PRIVACY_DENYLIST
 policy-blog/scripts/publish_posts.sh "$WORK/posts.json"     # 종료 코드 3 = 새 원고 없음(커밋·메일 없음)
-git add benefit-radar/outbox benefit-radar/state
+# (형식 확인용 시험 발송: TEST_MODE=1 로 실행하면 제목에 [시험]이 붙고 이력이 남지 않는다)
+
+# 1) 썸네일 먼저
+printf 'chore(policy-blog): thumbnails %s\n' "$(TZ=Asia/Seoul date +%F)" > "$WORK/msg1"
+git add public
+COMMIT_MSG_FILE="$WORK/msg1" benefit-radar/scripts/check_privacy.sh && git commit -F "$WORK/msg1" || true   # 썸네일이 없으면 커밋할 것 없음
+git push -u origin "$BRANCH"
+python3 benefit-radar/scripts/fetch.py check "<썸네일 공개 주소 하나>"   # ok/200 이면 메일을 보낸다(수 초 걸릴 수 있음, 재시도)
+
+# 2) 메일 파일
 printf 'chore(policy-blog): posts %s\n' "$(TZ=Asia/Seoul date +%F)" > "$WORK/msg"
+git add benefit-radar/outbox benefit-radar/state
 COMMIT_MSG_FILE="$WORK/msg" benefit-radar/scripts/check_privacy.sh
 git commit -F "$WORK/msg"
 git push -u origin "$BRANCH"      # 네트워크 오류 시 2s·4s·8s·16s 간격으로 최대 4회 재시도
 rm -rf "$WORK"
 ```
-- 커밋 메시지는 위 형식 그대로.
+- 커밋 메시지는 위 형식 그대로. `public/` 에는 정책 id·날짜 이름의 PNG 만 올라간다(개인정보 없음).
 - push 되면 `send-benefit-report` 워크플로가 복호화해 메일을 보낸다. 가능하면 워크플로 결과(성공/실패)만 확인한다.
 - 같은 정책을 같은 내용으로 다시 쓰지 않는다(이력 비교는 `publish_posts.sh` 가 한다).
 
 ---
 
-## 8. 세션 요약 (개인정보 없이)
+## 8. 사용자가 검색어 통계를 알려 줄 때
+블로그 통계의 유입 검색어를 받으면 `WRITING_GUIDE.md` 11장 순서대로 "고유명사 + 속성" 의 속성 단어를 모아, 이후 원고의 `one_liner`·`summary_lines`·`thumb_action`·`hashtags` 에 반영한다(저장소에는 검색어 원문을 쓰지 않고 규칙만 고친다). 유입이 0인 글은 제목에 정책 이름이 앞에 있는지부터 본다.
+
+---
+
+## 9. 세션 요약 (개인정보 없이)
 ```
 이번 회차: 신규 N건 / 변경 N건 / 새 정책 없음
 조사 한계: (막힌 도메인 등)

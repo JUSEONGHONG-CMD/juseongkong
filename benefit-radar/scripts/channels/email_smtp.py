@@ -6,6 +6,7 @@ message["to"] 는 받는사람, message["cc"](선택)는 참조로 한 통에 �
 """
 from __future__ import annotations
 
+import base64
 import os
 import smtplib
 import ssl
@@ -19,7 +20,7 @@ SENDER_NAME = "지원제도 알리미"
 
 def build(message: dict, sender: str) -> EmailMessage:
     msg = EmailMessage()
-    msg["From"] = formataddr((SENDER_NAME, sender))
+    msg["From"] = formataddr((message.get("from_name") or SENDER_NAME, sender))
     msg["To"] = ", ".join(message["to"])
     if message.get("cc"):
         msg["Cc"] = ", ".join(message["cc"])
@@ -28,6 +29,11 @@ def build(message: dict, sender: str) -> EmailMessage:
     msg.set_content(message.get("text") or "")
     if message.get("html"):
         msg.add_alternative(message["html"], subtype="html")
+    # 선택: 첨부 파일 [{"filename", "content_type", "data_b64"}] (예: 블로그 썸네일 PNG)
+    for att in message.get("attachments") or []:
+        maintype, _, subtype = (att.get("content_type") or "application/octet-stream").partition("/")
+        msg.add_attachment(base64.b64decode(att["data_b64"]), maintype=maintype, subtype=subtype or "octet-stream",
+                           filename=att["filename"])
     return msg
 
 
