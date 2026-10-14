@@ -212,6 +212,7 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
         raise PostsError("posts must be a list")
     if len(posts) > cfg.get("max_posts_per_mail", 3):
         errors.append(f"too many posts (max {cfg.get('max_posts_per_mail', 3)} per mail)")
+    focus = (cfg.get("focus_by_weekday") or {}).get(str(today.weekday()))
     seen: set[str] = set()
     titles: set[str] = set()
     for i, p in enumerate(posts):
@@ -278,6 +279,8 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
         for j, x in enumerate(pp):
             if x.get("persona_id") not in personas:
                 errors.append(f"{w}.personas[{j}]: unknown persona_id")
+            elif focus and x["persona_id"] not in focus:
+                errors.append(f"{w}.personas[{j}]: persona not in today's focus pair ({', '.join(focus)})")
             if x.get("fit") not in ("yes", "partial"):
                 errors.append(f"{w}.personas[{j}]: fit must be yes|partial")
             for f in ("story", "benefit_estimate"):
@@ -354,18 +357,32 @@ def plain_html(text) -> str:
     return e(plain(text))
 
 
+NAVY = "#1f3a6e"
+BORDER = "#ced4da"
+ZEBRA = "#f8f9fa"
+
+
 def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = None, shade_first: bool = False,
-         shade_rows: set | None = None, header_colors: list[str] | None = None) -> str:
-    """네이버 에디터에 붙여넣어도 너비·음영이 유지되도록 width/bgcolor HTML 속성을 쓴 표(셀 값은 이미 이스케이프된 HTML)."""
-    t = ['<table width="100%" border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">']
+         shade_rows: set | None = None, header_colors: list[str] | None = None, row_colors: list[str] | None = None) -> str:
+    """네이버 에디터에 붙여넣어도 너비·음영이 유지되도록 width/bgcolor/bordercolor HTML 속성을 쓴 표.
+    머리글은 진한 배경 + 흰 글씨, 왼쪽 칸은 연한 파랑, 줄무늬(zebra)로 읽기 쉽게 한다. 셀 값은 이미 이스케이프된 HTML."""
+    t = [f'<table width="100%" border="1" bordercolor="{BORDER}" cellpadding="10" cellspacing="0" style="border-collapse:collapse;border-color:{BORDER}">']
     if header:
-        cols = header_colors or [BAR] * len(header)
-        t.append("<tr>" + "".join(f'<th width="{w}%" bgcolor="{c}">{h}</th>' for h, w, c in zip(header, widths, cols)) + "</tr>")
+        cols = header_colors or [NAVY] * len(header)
+        t.append("<tr>" + "".join(f'<th width="{w}%" bgcolor="{c}" align="left"><font color="#ffffff"><b>{h}</b></font></th>'
+                                  for h, w, c in zip(header, widths, cols)) + "</tr>")
     for i, r in enumerate(rows):
         cells = []
         for j, (c, w) in enumerate(zip(r, widths)):
-            color = HILITE if (shade_rows and i in shade_rows) else (BAR if (shade_first and j == 0) else None)
-            cells.append(f'<td width="{w}%" valign="top"' + (f' bgcolor="{color}"' if color else "") + f">{c}</td>")
+            if shade_rows and i in shade_rows:
+                color = HILITE
+            elif row_colors and j == 0 and row_colors[i]:
+                color = row_colors[i]
+            elif shade_first and j == 0:
+                color = "#e7f0ff"
+            else:
+                color = ZEBRA if i % 2 else "#ffffff"
+            cells.append(f'<td width="{w}%" valign="top" bgcolor="{color}">{c}</td>')
         t.append("<tr>" + "".join(cells) + "</tr>")
     t.append("</table>")
     return "".join(t)
@@ -423,11 +440,12 @@ def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dic
           "<p><em>가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요.</em></p>",
           _tbl([[f"{FIT_MARK[x['fit']]} <b>{e(_persona_name(personas, x['persona_id']))}</b><br>{e(FIT_TEXT[x['fit']])}",
                  f"{rich(x['story'])}<br><b>예상 혜택:</b> <b><span style=\"background-color:{HILITE}\">{plain_html(x['benefit_estimate'])}</span></b>"]
-                for x in p["personas"]], [30, 70], ["인물", "상황과 예상 혜택"], shade_first=True)]
+                for x in p["personas"]], [30, 70], ["인물", "상황과 예상 혜택"],
+               row_colors=["#d3f9d8" if x["fit"] == "yes" else "#fff3bf" for x in p["personas"]])]
     pairs = [[rich(p["benefits"][i]) if i < len(p["benefits"]) else "", rich(p["drawbacks"][i]) if i < len(p["drawbacks"]) else ""]
              for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
     h += ["<h2>⚖️ 좋은 점과 아쉬운 점</h2>",
-          _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"], header_colors=["#d3f9d8", "#ffe3e3"]),
+          _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"], header_colors=["#2b8a3e", "#c92a2a"]),
           "<h2>📝 신청 방법</h2>",
           _tbl([[f"<b>{i}단계</b>", rich(x)] for i, x in enumerate(p["how_to_apply"], 1)], [18, 82], ["단계", "할 일"], shade_first=True),
           f'<p><font size="4">🔗 <a href="{e(p["apply_url"])}"><b>신청 바로가기</b></a></font> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
@@ -460,7 +478,7 @@ def subject_for(posts: list, today: dt.date, test: bool = False) -> str:
         bits.append(f"신규 {new}건")
     if upd:
         bits.append(f"변경 {upd}건")
-    s = f"[정책 블로그 원고] {' · '.join(bits)}"
+    s = f"[정책 블로그 원고] 🆕 새 정책 있음 · {' · '.join(bits)}"
     dated = [(days_left(p, today), p) for p in posts if days_left(p, today) is not None and days_left(p, today) >= 0]
     if dated:
         left, p = min(dated, key=lambda x: x[0])
@@ -489,10 +507,68 @@ def _guide_box_html(n: int, total: int, p: dict, slot: str, cfg: dict, warnings:
     return "\n".join(box)
 
 
-def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict) -> str:
+def focus_labels(doc_scan: dict | None, personas: dict, cfg: dict, today: dt.date) -> list[str]:
+    ids = (doc_scan or {}).get("focus") or (cfg.get("focus_by_weekday") or {}).get(str(today.weekday())) or list(personas)
+    return [personas[i]["label"] for i in ids if i in personas]
+
+
+def next_run_text(today: dt.date, cfg: dict) -> str:
+    days = sorted(int(k) for k in (cfg.get("focus_by_weekday") or {}))
+    for add in range(1, 8):
+        d = today + dt.timedelta(days=add)
+        if d.weekday() in days:
+            return f"{fmt_date(d)} 오전"
+    return "다음 정기 실행일"
+
+
+def status_banner_html(posts: list, labels: list[str], today: dt.date) -> str:
+    wd = WEEKDAYS[today.weekday()]
+    if posts:
+        new = sum(1 for p in posts if p["kind"] == "new")
+        upd = len(posts) - new
+        what = " · ".join(x for x in (f"신규 {new}건" if new else "", f"변경 {upd}건" if upd else "") if x)
+        return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#2b8a3e">'
+                f'<font size="5" color="#ffffff"><b>🆕 새 정책이 있어요: {e(what)}</b></font><br>'
+                f'<font size="3" color="#ffffff">{wd}요일 점검 · 이번 회차 대표 인물: {e(" · ".join(labels))} · 아래 원고를 올려 주세요</font>'
+                "</td></tr></table>")
+    return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#868e96">'
+            f'<font size="5" color="#ffffff"><b>오늘은 새 정책이 없어요</b></font><br>'
+            f'<font size="3" color="#ffffff">{wd}요일 점검 · 확인한 대표 인물: {e(" · ".join(labels))} · 올릴 원고가 없으니 쉬셔도 돼요</font>'
+            "</td></tr></table>")
+
+
+def render_no_news_html(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
+    scan = doc.get("scan") or {}
+    labels = focus_labels(scan, personas, cfg, today)
+    parts = ['<div style="font-family:-apple-system,\'Malgun Gothic\',sans-serif;max-width:760px;margin:0 auto;line-height:1.65;color:#222">',
+             f"<h2>정책 블로그 점검 결과 ({e(today.isoformat())})</h2>", status_banner_html([], labels, today)]
+    parts.append("<p>공식 출처를 확인했지만, 이번 회차에 새로 나왔거나 바뀐 정책 중 대표 인물에게 해당하는 것이 없었어요.</p>")
+    if scan.get("note"):
+        parts.append(f"<p>{e(scan['note'])}</p>")
+    if scan.get("checked"):
+        parts.append("<p><b>이번에 확인한 곳</b></p><ul>" + "".join(f"<li>{e(c)}</li>" for c in scan["checked"]) + "</ul>")
+    parts.append(f"<p>다음 점검: <b>{e(next_run_text(today, cfg))}</b></p></div>")
+    return "\n".join(parts)
+
+
+def render_no_news_text(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
+    scan = doc.get("scan") or {}
+    labels = focus_labels(scan, personas, cfg, today)
+    out = [f"오늘은 새 정책이 없어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)",
+           f"확인한 대표 인물: {' · '.join(labels)}", "올릴 원고가 없으니 쉬셔도 돼요."]
+    if scan.get("note"):
+        out.append(scan["note"])
+    if scan.get("checked"):
+        out += ["", "이번에 확인한 곳:"] + [f"- {c}" for c in scan["checked"]]
+    out += ["", f"다음 점검: {next_run_text(today, cfg)}"]
+    return "\n".join(out)
+
+
+def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict,
+                labels: list[str] | None = None) -> str:
     order = sorted(posts, key=lambda p: _sort_key(p, today))
     parts = ['<div style="font-family:-apple-system,\'Malgun Gothic\',sans-serif;max-width:760px;margin:0 auto;line-height:1.65;color:#222">',
-             f"<h2>정책 블로그 원고 ({e(today.isoformat())})</h2>",
+             f"<h2>정책 블로그 원고 ({e(today.isoformat())})</h2>", status_banner_html(posts, labels or [], today),
              "<p>각 원고의 노란 상자 아래 빨간 선부터가 붙여넣을 본문입니다. 본문을 선택해 복사하면 서식이 유지되고, 마크다운 원문은 맨 아래에 있어요.</p>",
              "<ol>"]
     for p in order:
@@ -520,7 +596,7 @@ def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
 
 def render_text(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict) -> str:
     order = sorted(posts, key=lambda p: _sort_key(p, today))
-    out = [f"정책 블로그 원고 ({today.isoformat()})", ""]
+    out = [f"🆕 새 정책이 있어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)", ""]
     for p in order:
         out.append(f"- {p['title']} — {'신규' if p['kind'] == 'new' else '변경'} · 마감 {deadline_line(p, today)}")
     for n, p in enumerate(order, 1):
@@ -555,10 +631,16 @@ def build_payload(doc: dict, to: list[str], today: dt.date, cc: list[str] | None
     cfg = load_config()
     validate(doc, personas, denylist or [], cfg, today)
     posts = doc["posts"]
-    if not posts:
-        raise PostsError("no posts to send")
     if not to:
         raise PostsError("at least one --to recipient required")
+    if not posts:  # 새 정책이 없어도 "없음"을 알리는 메일을 보낸다
+        labels = focus_labels(doc.get("scan"), personas, cfg, today)
+        wd = WEEKDAYS[today.weekday()]
+        subj = f"[정책 블로그] 오늘은 새 정책이 없어요 ({wd} · {' · '.join(labels)})"
+        return {"schema_version": "1.0", "messages": [{
+            "to": to, "cc": cc or [], "subject": ("[시험] " if test else "") + subj,
+            "text": render_no_news_text(doc, personas, cfg, today), "html": render_no_news_html(doc, personas, cfg, today),
+            "from_name": "정책 블로그 원고"}]}
     order = sorted(posts, key=lambda p: _sort_key(p, today))
     slot_list = cfg["publish_slots"]
     slots = {p["id"]: slot_list[i] for i, p in enumerate(order)}
@@ -572,7 +654,7 @@ def build_payload(doc: dict, to: list[str], today: dt.date, cc: list[str] | None
                                 "data_b64": base64.b64encode(t["path"].read_bytes()).decode("ascii")})
     msg = {"to": to, "cc": cc or [], "subject": subject_for(posts, today, test),
            "text": render_text(posts, personas, today, cfg, slots, warns, thumbs),
-           "html": render_html(posts, personas, today, cfg, slots, warns, thumbs),
+           "html": render_html(posts, personas, today, cfg, slots, warns, thumbs, focus_labels(doc.get("scan"), personas, cfg, today)),
            "from_name": "정책 블로그 원고"}
     if attachments:
         msg["attachments"] = attachments

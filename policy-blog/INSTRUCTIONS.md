@@ -4,6 +4,8 @@
 수신자·암호 등 **입력값은 Routine 프롬프트로만 전달**되며 이 문서와 저장소에는 없다.
 발송·암호화·실패 알림은 `benefit-radar/` 의 파이프라인(GitHub Actions)을 그대로 쓴다.
 
+**실행 요일과 대표 인물**: 화·목 오전. 한 번에 대표 인물 **2명씩** 맡는다 — 화요일은 청년 1인 가구·신혼부부, 목요일은 영유아 양육 가구·소득이 적은 시니어(`blog_config.json` 의 `focus_by_weekday`). 렌더러는 그날 인물 밖의 인물이 원고에 들어가면 거부한다(다른 요일에 수동으로 돌릴 때는 제한 없음).
+
 ---
 
 ## 0. 🔒 개인정보 규칙 (모든 단계보다 우선)
@@ -53,7 +55,8 @@ benefit-radar/scripts/unseal.sh benefit-radar/state/blog-state.json.enc "$WORK/s
 - 이미 쓴 정책이라도 **신청 기간·요건·금액·신청 경로가 바뀌면** 변경 원고(`update`)로 쓴다. 이력(`known`)과 비교한다.
 - 확정되지 않은 **예산안·세법개정안은 쓰지 않는다**(국회 확정 후 시행 단계가 되면 쓴다).
 - 한 번에 **최대 3건**. 대표 인물 4명 중 한 명이라도 실제로 해당될 가능성이 큰 정책, 마감이 가까운 정책을 먼저 고른다.
-- 새 정책이 없으면 원고를 만들지 않고 7장 요약만 남긴다(메일·커밋 없음).
+- 새 정책이 없으면 원고를 만들지 않는다. 대신 `posts.json` 을 `{"schema_version":"1.0","posts":[],"scan":{"checked":[확인한 곳들],"note":"…"}}` 로 만들어 **그대로 발행한다**: 메일 맨 위에 "오늘은 새 정책이 없어요"가 나오고(확인한 대표 인물·확인한 곳·다음 점검일 포함), 사용자는 이 메일로 새 정책 유무를 바로 알 수 있다. 썸네일·이력 변화는 없다.
+- 새 정책이 있으면 `scan.focus` 는 생략해도 된다(그날 요일의 인물로 자동). 메일 맨 위에 "🆕 새 정책이 있어요: 신규 N건"이 나온다.
 
 ### 3-2. 어디서 찾나
 `benefit-radar/INSTRUCTIONS.md` 4-1장의 공식 출처 표와 같다(보조금24 `gov.kr`, 복지로 `bokjiro.go.kr`, 온통청년 `youthcenter.go.kr`, 주택도시기금 `nhuf.molit.go.kr`, 청약홈 `applyhome.co.kr`, 금융위 `fsc.go.kr`, 국세청 `nts.go.kr`, 고용24 `work24.go.kr`, 보건복지부·고용노동부·교육부·여성가족부 보도자료, 정책브리핑 등).
@@ -91,7 +94,7 @@ benefit-radar/scripts/unseal.sh benefit-radar/state/blog-state.json.enc "$WORK/s
 - **마감이 오늘이거나 이미 지난 정책은 쓰지 않는다**(렌더러가 거부).
 - `documents` 가 공고에 없으면 `documents_note` 에 “공고에 서류 미기재 — 문의처: …”.
 - `apply_url`, `notice_url` 은 공식 도메인만. 발행 전 `python3 benefit-radar/scripts/fetch.py check <URL...>` 로 열린다는 것을 확인한다(접속 불가 사이트는 WebSearch 결과에서 공식 도메인 URL임을 확인).
-- 정책 id 는 `<기관>-<제도>[-지역]` kebab-case, 같은 정책은 항상 같은 id.
+- 정책 id 는 `<기관>-<제도>[-지역]-<그룹>` kebab-case, **끝에 `-a`(화요일 인물: 청년·신혼부부) 또는 `-b`(목요일 인물: 양육 가구·시니어)** 를 붙인다. 같은 정책이 두 그룹에 모두 해당하면 화·목에 각각 그룹에 맞는 사례·관점으로 다른 원고를 쓸 수 있다(같은 글을 복사하지 않는다).
 
 ---
 
@@ -119,10 +122,10 @@ benefit-radar/scripts/unseal.sh benefit-radar/state/blog-state.json.enc "$WORK/s
 
 ```bash
 export REPORT_PASSPHRASE RECIPIENTS CC PRIVACY_DENYLIST
-policy-blog/scripts/publish_posts.sh "$WORK/posts.json"     # 종료 코드 3 = 새 원고 없음(커밋·메일 없음)
+policy-blog/scripts/publish_posts.sh "$WORK/posts.json"     # 새 원고가 없으면 "새 정책 없음" 알림 메일 파일이 만들어진다
 # (형식 확인용 시험 발송: TEST_MODE=1 로 실행하면 제목에 [시험]이 붙고 이력이 남지 않는다)
 
-# 1) 썸네일 먼저
+# 1) 썸네일 먼저(새 정책이 없는 날은 public/ 이 비어 있어 이 단계가 필요 없다)
 printf 'chore(policy-blog): thumbnails %s\n' "$(TZ=Asia/Seoul date +%F)" > "$WORK/msg1"
 git add public
 COMMIT_MSG_FILE="$WORK/msg1" benefit-radar/scripts/check_privacy.sh && git commit -F "$WORK/msg1" || true   # 썸네일이 없으면 커밋할 것 없음
@@ -150,7 +153,7 @@ rm -rf "$WORK"
 
 ## 9. 세션 요약 (개인정보 없이)
 ```
-이번 회차: 신규 N건 / 변경 N건 / 새 정책 없음
+이번 회차(요일·대표 인물 2명): 신규 N건 / 변경 N건 / 새 정책 없음(알림 메일 발송)
 조사 한계: (막힌 도메인 등)
 메일 발송 워크플로: 성공/실패/해당 없음
 ```

@@ -9,7 +9,7 @@
 #    썸네일 PNG 는 <저장소>/public/<날짜>/<id>/01_thumb.png 에 만든다. 메일 본문이 이 공개 주소를 가리키므로
 #    호출자는 **public/ 을 먼저 commit·push 한 뒤** outbox/state 를 push 해야 한다(INSTRUCTIONS 7장).
 # TEST_MODE=1 이면 제목에 [시험]을 붙이고 이력(state)을 갱신하지 않는다(형식 확인용).
-# 새 원고가 없으면 아무것도 만들지 않고 종료 코드 3 으로 끝난다(메일 없음, 커밋할 것 없음).
+# 새 원고가 없으면 "오늘은 새 정책이 없어요" 알림 메일을 만든다(posts.json 의 scan.checked·scan.note 를 메일에 넣는다).
 set -euo pipefail
 set +x
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -37,11 +37,7 @@ fi
 
 # 검증을 먼저(중복 제거 전 원본도 규칙을 지켜야 함), 그다음 중복 제거
 python3 "$here/blog_state.py" merge --state "$tmp/state.json" --posts "$tmp/posts.json" --today "$today" | tee "$tmp/merge.txt"
-if grep -q '^remaining=0$' "$tmp/merge.txt"; then
-  echo "publish_posts: no new or changed posts — nothing to send"
-  exit 3
-fi
-
+# remaining=0 이면 "오늘은 새 정책이 없어요" 알림 메일을 보낸다(썸네일 없음, 이력 변화 없음)
 to_args=()
 IFS=',' read -ra rcpts <<< "$RECIPIENTS"
 for r in "${rcpts[@]}"; do r="$(echo "$r" | xargs)"; [ -n "$r" ] && to_args+=(--to "$r"); done

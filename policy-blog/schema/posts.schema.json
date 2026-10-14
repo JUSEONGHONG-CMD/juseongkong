@@ -21,6 +21,27 @@
       "items": {
         "$ref": "#/$defs/post"
       }
+    },
+    "scan": {
+      "type": "object",
+      "description": "점검 메타. posts 가 비어 있을 때 '새 정책 없음' 메일에 쓴다",
+      "properties": {
+        "focus": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     }
   },
   "$defs": {
