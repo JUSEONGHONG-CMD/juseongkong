@@ -195,7 +195,10 @@ def _check_url(errors: list, where: str, url, official_only: bool = True) -> Non
 def all_tags(post: dict, cfg: dict) -> list[str]:
     """고정 태그 + 이번 글의 태그(중복 제거, '#' 제거). 상한은 max_tags."""
     out, seen = [], set()
-    for t in list(cfg.get("fixed_tags", [])) + list(post.get("hashtags", [])):
+    ptags = []
+    for x in post.get("personas") or []:
+        ptags += (cfg.get("persona_tags") or {}).get(x.get("persona_id"), [])
+    for t in list(cfg.get("fixed_tags", [])) + ptags + list(post.get("hashtags", [])):
         t = str(t).lstrip("#").strip()
         if t and t.lower() not in seen:
             seen.add(t.lower())
@@ -274,8 +277,12 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
         # 대표 인물
         pp = p.get("personas")
         if not (isinstance(pp, list) and pp):
-            errors.append(f"{w}: personas needs at least 1 entry")
+            errors.append(f"{w}: personas needs exactly 1 entry")
             pp = []
+        elif len(pp) != 1:
+            errors.append(f"{w}: one post per persona — personas must have exactly 1 entry (write a separate post for each persona)")
+        elif pid and personas.get(pp[0].get("persona_id")) and not pid.endswith("-" + personas[pp[0]["persona_id"]]["id_code"]):
+            errors.append(f"{w}: id must end with -{personas[pp[0]['persona_id']]['id_code']}")
         for j, x in enumerate(pp):
             if x.get("persona_id") not in personas:
                 errors.append(f"{w}.personas[{j}]: unknown persona_id")
@@ -467,7 +474,8 @@ def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dic
 
 def _sort_key(p: dict, today: dt.date):
     left = days_left(p, today)
-    return (left is None or left < 0, left if left is not None else 0)
+    pid = ((p.get("personas") or [{}])[0].get("persona_id")) or ""
+    return (pid, left is None or left < 0, left if left is not None else 0)
 
 
 def subject_for(posts: list, today: dt.date, test: bool = False) -> str:
@@ -578,7 +586,7 @@ def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
         img = thumbs.get(p["id"], {}).get("url")
         parts += [
             '<hr style="margin:28px 0">',
-            f"<h3>원고 {n}/{len(order)} · {'신규 정책' if p['kind'] == 'new' else '변경된 정책'} · {e(p['policy_name'])} ({e(p['agency'])})</h3>",
+            f"<h3>원고 {n}/{len(order)} · {e(personas[p['personas'][0]['persona_id']]['label'])} · {'신규 정책' if p['kind'] == 'new' else '변경된 정책'} · {e(p['policy_name'])} ({e(p['agency'])})</h3>",
             "<p style='color:#2a6b2a'>✔ 2중 검토 완료(작성 후 자체 검토 + 독립 검토)</p>",
             _guide_box_html(n, len(order), p, slots[p["id"]], cfg, warns[p["id"]], bool(thumbs.get(p["id"]))),
             '<hr style="border:0;border-top:3px solid #e03131;margin:14px 0">',
@@ -600,7 +608,7 @@ def render_text(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
     for p in order:
         out.append(f"- {p['title']} — {'신규' if p['kind'] == 'new' else '변경'} · 마감 {deadline_line(p, today)}")
     for n, p in enumerate(order, 1):
-        out += ["", "=" * 60, f"원고 {n}/{len(order)} · {p['policy_name']} ({p['agency']})", "=" * 60, "",
+        out += ["", "=" * 60, f"원고 {n}/{len(order)} · {personas[p['personas'][0]['persona_id']]['label']} · {p['policy_name']} ({p['agency']})", "=" * 60, "",
                 f"[발행 정보] 카테고리: {category_for(p, cfg)} / 예약: 오늘 {slots[p['id']]}",
                 f"제목: {p['title']}", f"태그: {', '.join(all_tags(p, cfg))}"]
         if warns[p["id"]]:

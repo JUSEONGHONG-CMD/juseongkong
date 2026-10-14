@@ -111,7 +111,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "안정적인 kebab-case 정책 id (<기관>-<제도>[-지역]). 같은 정책은 항상 같은 id."
+          "description": "안정적인 kebab-case 정책 id (<기관>-<제도>[-지역]-<인물코드>). 인물코드: young / newlywed / parenting / senior"
         },
         "kind": {
           "enum": [
@@ -194,7 +194,9 @@
                 "description": "금액은 계산 가정을 함께 적는다"
               }
             }
-          }
+          },
+          "maxItems": 1,
+          "description": "정책 하나·인물 하나당 원고 하나(정확히 1명)"
         },
         "benefits": {
           "type": "array",
