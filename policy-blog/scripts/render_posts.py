@@ -609,11 +609,20 @@ def _guide_box_html(n: int, total: int, p: dict, slot: str, cfg: dict, warnings:
     return "\n".join(box)
 
 
+def missing_note_html(missing: list[str], scan: dict | None) -> str:
+    if not missing:
+        return ""
+    note = (scan or {}).get("note") or "공식 출처에서 최근 3주 안에 새로 시행·변경된 정책을 확인하지 못했어요."
+    return ('<table width="100%" border="0" cellpadding="12" cellspacing="0" style="margin-top:8px"><tr><td bgcolor="#e9ecef">'
+            f'<b>이번 회차에 새 정책이 없었던 대표 인물: {e(" · ".join(missing))}</b><br>{e(note)}</td></tr></table>')
+
+
 def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict,
-                labels: list[str] | None = None) -> str:
+                labels: list[str] | None = None, missing: list[str] | None = None, scan: dict | None = None) -> str:
     order = sorted(posts, key=lambda p: _sort_key(p, today))
     parts = ['<div style="font-family:-apple-system,\'Malgun Gothic\',sans-serif;max-width:760px;margin:0 auto;line-height:1.65;color:#222">',
              f"<h2>정책 블로그 원고 ({e(today.isoformat())})</h2>", status_banner_html(posts, labels or [], today),
+             missing_note_html(missing or [], scan),
              "<p>각 원고의 노란 상자 아래 빨간 선부터가 붙여넣을 본문입니다. 본문을 선택해 복사하면 서식이 유지되고, 마크다운 원문은 맨 아래에 있어요.</p>",
              "<ol>"]
     for p in order:
@@ -641,9 +650,13 @@ def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
     return "\n".join(parts)
 
 
-def render_text(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict) -> str:
+def render_text(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict,
+                missing: list[str] | None = None, scan: dict | None = None) -> str:
     order = sorted(posts, key=lambda p: _sort_key(p, today))
     out = [f"🆕 새 정책이 있어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)", ""]
+    if missing:
+        out += [f"이번 회차에 새 정책이 없었던 대표 인물: {' · '.join(missing)} — "
+                f"{(scan or {}).get('note') or '공식 출처에서 최근 3주 안에 새로 시행·변경된 정책을 확인하지 못했어요.'}", ""]
     for p in order:
         out.append(f"- {personas[p['persona_id']]['label']}: {p['title']}")
     for n, p in enumerate(order, 1):
@@ -697,9 +710,13 @@ def build_payload(doc: dict, to: list[str], today: dt.date, cc: list[str] | None
         if t:
             attachments.append({"filename": f"{n:02d}_thumb_{p['id']}.png", "content_type": "image/png",
                                 "data_b64": base64.b64encode(t["path"].read_bytes()).decode("ascii")})
+    focus_ids = (doc.get("scan") or {}).get("focus") or (cfg.get("focus_by_weekday") or {}).get(str(today.weekday())) or []
+    have = {p["persona_id"] for p in posts}
+    missing = [personas[i]["label"] for i in focus_ids if i in personas and i not in have]
     msg = {"to": to, "cc": cc or [], "subject": subject_for(posts, today, test),
-           "text": render_text(posts, personas, today, cfg, slots, warns, thumbs),
-           "html": render_html(posts, personas, today, cfg, slots, warns, thumbs, focus_labels(doc.get("scan"), personas, cfg, today)),
+           "text": render_text(posts, personas, today, cfg, slots, warns, thumbs, missing, doc.get("scan")),
+           "html": render_html(posts, personas, today, cfg, slots, warns, thumbs, focus_labels(doc.get("scan"), personas, cfg, today),
+                               missing, doc.get("scan")),
            "from_name": "정책 블로그 원고"}
     if attachments:
         msg["attachments"] = attachments
