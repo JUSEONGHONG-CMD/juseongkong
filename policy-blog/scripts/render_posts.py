@@ -54,6 +54,20 @@ def e(value) -> str:
     return html.escape("" if value is None else str(value))
 
 
+HILITE = "#fff3bf"   # 형광펜(노란 음영)
+BAR = "#f1f3f5"      # 표 왼쪽 칸 음영
+
+
+def plain(text) -> str:
+    """강조 표시(**…**)를 뗀 글자. 검사용."""
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", "" if text is None else str(text))
+
+
+def rich(text) -> str:
+    """HTML 이스케이프 후 **강조** 를 굵은 글씨 + 노란 음영으로 바꾼다."""
+    return re.sub(r"\*\*(.+?)\*\*", rf'<b><span style="background-color:{HILITE}">\1</span></b>', e(text))
+
+
 def _parse_date(value):
     try:
         return dt.date.fromisoformat(value) if value else None
@@ -143,7 +157,7 @@ def lint(post: dict, cfg: dict) -> list[str]:
     """맞춤법·표기 점검(경고). 메일 위 빨간 칸에 표시한다."""
     warn: list[str] = []
     texts = list(_walk_strings({k: v for k, v in post.items() if k not in ("verification", "sources", "apply_url", "notice_url", "id")}))
-    blob = "\n".join(texts)
+    blob = "\n".join(plain(t) for t in texts)
     for wrong, right in cfg.get("typos", {}).items():
         if wrong in blob:
             warn.append(f"맞춤법 확인: '{wrong}' → '{right}'")
@@ -217,12 +231,15 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
                 errors.append(f"{w}: {f} required")
         # 제목·첫 문장: 정책 고유명사로 시작, 과장 표현 금지
         sn = (p.get("search_name") or "").strip()
+        for f in ("title", "search_name"):
+            if "**" in (p.get(f) or ""):
+                errors.append(f"{w}: {f} must not contain ** emphasis")
         if sn:
             if not (p.get("title") or "").lstrip("[( ").startswith(sn.lstrip("[( ")):
                 errors.append(f"{w}: title must start with search_name")
-            if not (p.get("one_liner") or "").startswith(sn):
+            if not plain(p.get("one_liner")).startswith(sn):
                 errors.append(f"{w}: one_liner must start with search_name")
-            if not (p.get("intro") or "").startswith(sn):
+            if not plain(p.get("intro")).startswith(sn):
                 errors.append(f"{w}: intro must start with search_name")
         if len(p.get("title") or "") > cfg.get("title_max_chars", 60):
             errors.append(f"{w}: title too long (>{cfg.get('title_max_chars', 60)} chars)")
@@ -332,13 +349,24 @@ def _md_table(header: list[str], rows: list[list[str]]) -> list[str]:
     return out + [""]
 
 
-def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = None) -> str:
-    """네이버 에디터에 붙여넣어도 너비가 유지되도록 width HTML 속성을 쓴 표(셀 값은 이미 이스케이프된 HTML)."""
+def plain_html(text) -> str:
+    """이미 형광펜을 씌우는 자리에서 쓰는 이스케이프(** 는 제거)."""
+    return e(plain(text))
+
+
+def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = None, shade_first: bool = False,
+         shade_rows: set | None = None, header_colors: list[str] | None = None) -> str:
+    """네이버 에디터에 붙여넣어도 너비·음영이 유지되도록 width/bgcolor HTML 속성을 쓴 표(셀 값은 이미 이스케이프된 HTML)."""
     t = ['<table width="100%" border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">']
     if header:
-        t.append("<tr>" + "".join(f'<th width="{w}%" bgcolor="#f1f3f5">{c}</th>' for c, w in zip(header, widths)) + "</tr>")
-    for r in rows:
-        t.append("<tr>" + "".join(f'<td width="{w}%" valign="top">{c}</td>' for c, w in zip(r, widths)) + "</tr>")
+        cols = header_colors or [BAR] * len(header)
+        t.append("<tr>" + "".join(f'<th width="{w}%" bgcolor="{c}">{h}</th>' for h, w, c in zip(header, widths, cols)) + "</tr>")
+    for i, r in enumerate(rows):
+        cells = []
+        for j, (c, w) in enumerate(zip(r, widths)):
+            color = HILITE if (shade_rows and i in shade_rows) else (BAR if (shade_first and j == 0) else None)
+            cells.append(f'<td width="{w}%" valign="top"' + (f' bgcolor="{color}"' if color else "") + f">{c}</td>")
+        t.append("<tr>" + "".join(cells) + "</tr>")
     t.append("</table>")
     return "".join(t)
 
@@ -377,35 +405,41 @@ def blog_markdown(p: dict, personas: dict, today: dt.date, img: str | None = Non
 
 
 def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dict) -> str:
+    """붙여넣을 본문. 음영은 CSS 가 아니라 bgcolor 속성, 큰 글씨는 <font size> 를 써서 에디터에서 살아남게 한다."""
     h = [f"<h1>{e(p['title'])}</h1>"]
     if img:
         h.append(f'<p><img src="{e(img)}" width="600" alt="{e(p["search_name"])} 정리"></p>')
-    h += [f"<p><strong>{e(p['one_liner'])}</strong></p>", f"<p>{e(p['intro'])}</p>",
-          f"<p><strong>⏰ 신청 마감: {e(deadline_line(p, today))}</strong></p>", "<h2>한눈에 보기</h2>",
-          _tbl([[f"<strong>{e(k)}</strong>", e(v)] for k, v in summary_rows(p, today)], [25, 75]),
-          "<p><strong>핵심 정리</strong></p><ul>"] + [f"<li>{e(x)}</li>" for x in p["summary_lines"]] + ["</ul>",
-          "<h2>누가 받을 수 있나요?</h2>",
-          _tbl([[f"<strong>{e(c['requirement'])}</strong>", e(c["detail"])] for c in p["criteria"]], [25, 75], ["요건", "내용"]),
-          "<h2>이런 분들은 이렇게 달라져요</h2>",
+    h += [f'<p><font size="4"><b>{rich(p["one_liner"])}</b></font></p>', f"<p>{rich(p['intro'])}</p>",
+          # 마감: 가장 눈에 띄게(큰 글씨 + 굵게 + 노란 음영 칸)
+          '<table width="100%" border="0" cellpadding="12" cellspacing="0"><tr>'
+          f'<td width="100%" bgcolor="{HILITE}"><font size="5"><b>⏰ 신청 마감: {e(deadline_line(p, today))}</b></font></td></tr></table>',
+          "<h2>🔎 한눈에 보기</h2>"]
+    rows = [[f"<b>{e(k)}</b>", (f"<b>{e(v)}</b>" if k == "마감" else e(v))] for k, v in summary_rows(p, today)]
+    h.append(_tbl(rows, [25, 75], shade_first=True, shade_rows={i for i, (k, _) in enumerate(summary_rows(p, today)) if k == "마감"}))
+    h += ['<p><font size="3"><b>핵심 정리</b></font></p><ul>'] + [f"<li>{rich(x)}</li>" for x in p["summary_lines"]] + ["</ul>",
+          "<h2>✅ 누가 받을 수 있나요?</h2>",
+          _tbl([[f"<b>{e(c['requirement'])}</b>", rich(c["detail"])] for c in p["criteria"]], [25, 75], ["요건", "내용"], shade_first=True),
+          "<h2>👥 이런 분들은 이렇게 달라져요</h2>",
           "<p><em>가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요.</em></p>",
-          _tbl([[f"{FIT_MARK[x['fit']]} <strong>{e(_persona_name(personas, x['persona_id']))}</strong><br>{e(FIT_TEXT[x['fit']])}",
-                 f"{e(x['story'])}<br><strong>예상 혜택:</strong> {e(x['benefit_estimate'])}"] for x in p["personas"]],
-               [30, 70], ["인물", "상황과 예상 혜택"])]
-    pairs = [[e(p["benefits"][i]) if i < len(p["benefits"]) else "", e(p["drawbacks"][i]) if i < len(p["drawbacks"]) else ""]
+          _tbl([[f"{FIT_MARK[x['fit']]} <b>{e(_persona_name(personas, x['persona_id']))}</b><br>{e(FIT_TEXT[x['fit']])}",
+                 f"{rich(x['story'])}<br><b>예상 혜택:</b> <b><span style=\"background-color:{HILITE}\">{plain_html(x['benefit_estimate'])}</span></b>"]
+                for x in p["personas"]], [30, 70], ["인물", "상황과 예상 혜택"], shade_first=True)]
+    pairs = [[rich(p["benefits"][i]) if i < len(p["benefits"]) else "", rich(p["drawbacks"][i]) if i < len(p["drawbacks"]) else ""]
              for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
-    h += ["<h2>좋은 점과 아쉬운 점</h2>", _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"]),
-          "<h2>신청 방법</h2>",
-          _tbl([[f"<strong>{i}단계</strong>", e(x)] for i, x in enumerate(p["how_to_apply"], 1)], [18, 82], ["단계", "할 일"]),
-          f'<p>🔗 <a href="{e(p["apply_url"])}">신청 바로가기</a> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
+    h += ["<h2>⚖️ 좋은 점과 아쉬운 점</h2>",
+          _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"], header_colors=["#d3f9d8", "#ffe3e3"]),
+          "<h2>📝 신청 방법</h2>",
+          _tbl([[f"<b>{i}단계</b>", rich(x)] for i, x in enumerate(p["how_to_apply"], 1)], [18, 82], ["단계", "할 일"], shade_first=True),
+          f'<p><font size="4">🔗 <a href="{e(p["apply_url"])}"><b>신청 바로가기</b></a></font> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
     if p.get("documents"):
-        h += ["<h2>준비 서류</h2><ul>"] + [f"<li>{e(x)}</li>" for x in p["documents"]] + ["</ul>"]
+        h += ["<h2>📑 준비 서류</h2><ul>"] + [f"<li>{rich(x)}</li>" for x in p["documents"]] + ["</ul>"]
     elif p.get("documents_note"):
-        h += ["<h2>준비 서류</h2>", f"<p>{e(p['documents_note'])}</p>"]
+        h += ["<h2>📑 준비 서류</h2>", f"<p>{rich(p['documents_note'])}</p>"]
     if p.get("related"):
-        h += ["<h2>함께 확인하면 좋은 정책</h2>",
-              _tbl([[f"<strong>{e(r['name'])}</strong>", e(r["line"])] for r in p["related"]], [35, 65], ["정책", "한 줄 정리"])]
-    h += [f"<p>{e(p['outro'])}</p>", f"<p><small>{e(DISCLAIMER.format(date=today.isoformat()))}</small></p>",
-          "<p><strong>출처</strong></p><ul>"]
+        h += ["<h2>➕ 함께 확인하면 좋은 정책</h2>",
+              _tbl([[f"<b>{e(r['name'])}</b>", rich(r["line"])] for r in p["related"]], [35, 65], ["정책", "한 줄 정리"], shade_first=True)]
+    h += [f"<p>{rich(p['outro'])}</p>", f"<p><small>{e(DISCLAIMER.format(date=today.isoformat()))}</small></p>",
+          "<p><b>출처</b></p><ul>"]
     h += [f'<li><a href="{e(s)}">{e(s)}</a></li>' for s in p["sources"]]
     h += ["</ul>", f"<p>{e(' '.join('#' + t for t in all_tags(p, cfg)))}</p>"]
     return "\n".join(h)
