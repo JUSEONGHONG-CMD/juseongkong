@@ -2,7 +2,7 @@
 """posts.json -> 정책별 대표 이미지(썸네일) PNG.
 
 1080x1080. 큰 글씨 = 정책 고유명사 + 행동 문장, 위 띠 = 누구를 위한 글인지(대표 인물 종류),
-아래 띠 = 지원 내용 + 마감(D-n). 목록에서 잘려도 보이게 핵심 글자는 가운데, 좌우 여백 8%.
+아래 띠 = 나열한 정책 요약(list_short) + 가장 빠른 마감(D-n). 목록에서 잘려도 보이게 핵심 글자는 가운데, 좌우 여백 8%.
 실존 건물 사진·로고·얼굴은 쓰지 않는다. 한글 글꼴이 없으면 만들지 않는다(네모로 깨진 이미지보다 낫다).
 
 저장 위치: <out-dir>/<날짜>/<정책 id>/01_thumb.png  (주소에는 한글을 쓰지 않는다)
@@ -99,12 +99,12 @@ def draw_centered(draw, lines, font, y, fill, gap=1.25):
 
 def make(post: dict, personas: dict, today: dt.date, path: Path, font_path: Path, mods) -> None:
     Image, ImageDraw, ImageFont = mods
-    first = (post.get("personas") or [{}])[0].get("persona_id")
+    first = post.get("persona_id")
     img = Image.new("RGB", (SIZE, SIZE), COLORS.get(first, DEFAULT_COLOR))
     d = ImageDraw.Draw(img)
     max_w = SIZE - 2 * MARGIN
     # 위 띠: 누구를 위한 글인지
-    labels = " · ".join(personas[x["persona_id"]]["label"] for x in post["personas"] if x["persona_id"] in personas)
+    labels = personas[first]["label"] if first in personas else ""
     d.rectangle([0, 0, SIZE, 150], fill="#00000040" if False else "#0B1B3F")
     f, lines = fit(d, labels, font_path, ImageFont, max_w, 1, 48, 30)
     draw_centered(d, lines, f, 150 // 2 - f.size // 2 - 4, "#FFFFFF")
@@ -118,13 +118,16 @@ def make(post: dict, personas: dict, today: dt.date, path: Path, font_path: Path
     y = draw_centered(d, l1, f1, top, "#FFFFFF")
     draw_centered(d, l2, f2, y + 40, "#FFE066")
     # 아래 띠: 지원 내용 + 마감
-    end = None
-    try:
-        end = dt.date.fromisoformat((post.get("deadline") or {}).get("end"))
-    except (TypeError, ValueError):
-        pass
-    tail = f"D-{(end - today).days}" if end and (end - today).days >= 0 else ((post.get("deadline") or {}).get("text") or "")
-    band = post["support_short"] + (f"  ·  {tail}" if tail else "")
+    ends = []
+    for it in post.get("items", []):
+        try:
+            e = dt.date.fromisoformat((it.get("deadline") or {}).get("end"))
+            if (e - today).days >= 0:
+                ends.append(e)
+        except (TypeError, ValueError):
+            pass
+    tail = f"가장 빠른 마감 D-{(min(ends) - today).days}" if ends else ""
+    band = post["list_short"] + (f"  ·  {tail}" if tail else "")
     d.rectangle([0, SIZE - 210, SIZE, SIZE], fill="#0B1B3F")
     f3, l3 = fit(d, band, font_path, ImageFont, max_w, 2, 54, 34)
     draw_centered(d, l3, f3, SIZE - 210 + (210 - len(l3) * int(f3.size * 1.25)) // 2, "#FFFFFF")

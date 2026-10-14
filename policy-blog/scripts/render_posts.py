@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """posts.json -> 블로그 원고 메일 payload JSON.
 
-posts.json 은 정책별 블로그 원고의 구조화 데이터다(schema/posts.schema.json).
+원고 한 편 = 대표 인물 한 명의 **정책 나열(총정리)**: 같은 형식의 정책 칸(items)을 같은 비중으로 나란히 보여 준다.
 이 스크립트가 필수 항목·2중 검토·공식 링크·금지어·검색 최적화 규칙(WRITING_GUIDE.md)을 검사한 뒤,
 같은 구조에서 블로그 본문(HTML)과 마크다운을 만들어 한 통의 메일로 묶는다.
 
@@ -33,6 +33,7 @@ PERSONAS_PATH = HERE.parent / "personas.json"
 CONFIG_PATH = HERE.parent / "blog_config.json"
 KST = dt.timezone(dt.timedelta(hours=9))
 WEEKDAYS = "월화수목금토일"
+CIRCLED = "①②③④⑤⑥⑦⑧"
 
 OFFICIAL_SUFFIXES = (".go.kr", ".or.kr", ".re.kr", ".ac.kr", "applyhome.co.kr", "korea.kr", "korea-pass.kr", "gov.kr")
 BLOCKED_HOSTS = ("naver.com", "tistory.com", "brunch.co.kr", "daum.net", "kakao.com", "youtube.com",
@@ -43,6 +44,12 @@ DISCLAIMER = ("※ 이 글에 나오는 인물은 이해를 돕기 위해 만든
 FIT_MARK = {"yes": "✅", "partial": "❔"}
 FIT_TEXT = {"yes": "해당될 가능성이 커요", "partial": "조건 확인이 필요해요"}
 
+HILITE = "#fff3bf"   # 형광펜(노란 음영)
+NAVY = "#1f3a6e"
+BORDER = "#ced4da"
+ZEBRA = "#f8f9fa"
+LEFT = "#e7f0ff"
+
 
 class PostsError(ValueError):
     pass
@@ -52,10 +59,6 @@ class PostsError(ValueError):
 
 def e(value) -> str:
     return html.escape("" if value is None else str(value))
-
-
-HILITE = "#fff3bf"   # 형광펜(노란 음영)
-BAR = "#f1f3f5"      # 표 왼쪽 칸 음영
 
 
 def plain(text) -> str:
@@ -79,8 +82,8 @@ def fmt_date(d: dt.date) -> str:
     return f"{d.month}월 {d.day}일({WEEKDAYS[d.weekday()]})"
 
 
-def deadline_line(post: dict, today: dt.date) -> str:
-    d = post.get("deadline") or {}
+def deadline_line(item: dict, today: dt.date) -> str:
+    d = item.get("deadline") or {}
     end = _parse_date(d.get("end"))
     start = _parse_date(d.get("start"))
     parts = []
@@ -95,8 +98,17 @@ def deadline_line(post: dict, today: dt.date) -> str:
     return " · ".join(parts) if parts else "공고 확인 필요"
 
 
-def days_left(post: dict, today: dt.date):
-    end = _parse_date((post.get("deadline") or {}).get("end"))
+def deadline_short(item: dict, today: dt.date) -> str:
+    d = item.get("deadline") or {}
+    end = _parse_date(d.get("end"))
+    if end:
+        return f"{end.month}/{end.day}까지 (D-{(end - today).days})"
+    text = d.get("text") or "공고 확인"
+    return text.split("(")[0].strip() if len(text) > 18 and "(" in text else text  # 표 칸용 짧은 표현
+
+
+def days_left(item: dict, today: dt.date):
+    end = _parse_date((item.get("deadline") or {}).get("end"))
     return None if end is None else (end - today).days
 
 
@@ -121,7 +133,6 @@ def load_config() -> dict:
 
 
 def has_batchim(word: str) -> bool | None:
-    """마지막 글자가 한글이고 받침이 있으면 True, 없으면 False, 한글이 아니면 None."""
     for ch in reversed(word.strip()):
         if "가" <= ch <= "힣":
             return (ord(ch) - 0xAC00) % 28 != 0
@@ -130,7 +141,6 @@ def has_batchim(word: str) -> bool | None:
     return None
 
 
-# 받침 있을 때 / 없을 때 올바른 조사 쌍
 _PARTICLE_PAIRS = [("은", "는"), ("이", "가"), ("을", "를"), ("과", "와")]
 
 
@@ -146,30 +156,34 @@ def particle_warnings(name: str, text: str) -> list[str]:
             out.append(f"조사 확인: '{name}{wrong}' → '{name}{right}'")
     if b is False and re.search(re.escape(name) + r"으로(?![가-힣])", text):
         out.append(f"조사 확인: '{name}으로' → '{name}로'")
-    if b is True and re.search(re.escape(name) + r"로(?![가-힣])", text) and not name.rstrip().endswith("ㄹ"):
-        last = [c for c in name if "가" <= c <= "힣"][-1]
-        if (ord(last) - 0xAC00) % 28 != 8:  # ㄹ 받침은 '로'가 맞다
-            out.append(f"조사 확인: '{name}로' → '{name}으로'")
     return out
 
 
 def lint(post: dict, cfg: dict) -> list[str]:
     """맞춤법·표기 점검(경고). 메일 위 빨간 칸에 표시한다."""
     warn: list[str] = []
-    texts = list(_walk_strings({k: v for k, v in post.items() if k not in ("verification", "sources", "apply_url", "notice_url", "id")}))
-    blob = "\n".join(plain(t) for t in texts)
+    skip = ("verification", "sources", "apply_url", "notice_url", "id")
+
+    def strip(v):
+        if isinstance(v, dict):
+            return {k: strip(x) for k, x in v.items() if k not in skip}
+        if isinstance(v, list):
+            return [strip(x) for x in v]
+        return v
+    blob = "\n".join(plain(t) for t in _walk_strings(strip(post)))
     for wrong, right in cfg.get("typos", {}).items():
         if wrong in blob:
             warn.append(f"맞춤법 확인: '{wrong}' → '{right}'")
-    for m in re.finditer(r"([가-힣A-Za-z0-9㎡]{2,})\s+\1(?![가-힣A-Za-z0-9])", blob):
-        warn.append(f"같은 단어 반복: '{m.group(1)}'")
-        break
+    for text in (plain(t) for t in _walk_strings(strip(post))):  # 문자열 하나 안에서만 검사(칸과 칸 사이는 제외)
+        m = re.search(r"([가-힣A-Za-z0-9㎡]{2,})\s+\1(?![가-힣A-Za-z0-9])", text)
+        if m:
+            warn.append(f"같은 단어 반복: '{m.group(1)}'")
     if re.search(r"\s+[,.?!]", blob):
         warn.append("문장부호 앞 공백이 있어요")
     if re.search(r"\(\s*\)", blob):
         warn.append("빈 괄호가 있어요")
-    warn += particle_warnings(post.get("search_name", ""), blob)
-    # 중복 제거
+    for name in [post.get("search_name", "")] + [i.get("search_name", "") for i in post.get("items", [])]:
+        warn += particle_warnings(name, blob)
     seen, out = set(), []
     for w in warn:
         if w not in seen:
@@ -193,17 +207,21 @@ def _check_url(errors: list, where: str, url, official_only: bool = True) -> Non
 
 
 def all_tags(post: dict, cfg: dict) -> list[str]:
-    """고정 태그 + 이번 글의 태그(중복 제거, '#' 제거). 상한은 max_tags."""
+    """고정 태그 + 인물 태그 + 이번 글의 태그(중복 제거, '#' 제거)."""
     out, seen = [], set()
-    ptags = []
-    for x in post.get("personas") or []:
-        ptags += (cfg.get("persona_tags") or {}).get(x.get("persona_id"), [])
-    for t in list(cfg.get("fixed_tags", [])) + ptags + list(post.get("hashtags", [])):
+    ptags = (cfg.get("persona_tags") or {}).get(post.get("persona_id"), [])
+    for t in list(cfg.get("fixed_tags", [])) + list(ptags) + list(post.get("hashtags", [])):
         t = str(t).lstrip("#").strip()
         if t and t.lower() not in seen:
             seen.add(t.lower())
             out.append(t)
     return out
+
+
+def _req_str(errors, where, obj, fields):
+    for f in fields:
+        if not (isinstance(obj.get(f), str) and obj[f].strip()):
+            errors.append(f"{where}: {f} required")
 
 
 def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: dt.date) -> None:
@@ -216,24 +234,26 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
     if len(posts) > cfg.get("max_posts_per_mail", 3):
         errors.append(f"too many posts (max {cfg.get('max_posts_per_mail', 3)} per mail)")
     focus = (cfg.get("focus_by_weekday") or {}).get(str(today.weekday()))
-    seen: set[str] = set()
-    titles: set[str] = set()
+    max_items = cfg.get("max_items_per_post", 5)
+    seen_posts, seen_items, seen_personas, titles = set(), set(), set(), set()
     for i, p in enumerate(posts):
         w = f"posts[{i}]"
         pid = p.get("id")
-        if not pid:
-            errors.append(f"{w}: id required")
-        elif pid in seen:
-            errors.append(f"{w}: duplicate id {pid}")
+        if not pid or pid in seen_posts:
+            errors.append(f"{w}: unique id required")
+        seen_posts.add(pid)
+        _req_str(errors, w, p, ("title", "search_name", "one_liner", "intro", "outro", "list_short"))
+        persona = personas.get(p.get("persona_id"))
+        if not persona:
+            errors.append(f"{w}: unknown persona_id")
         else:
-            seen.add(pid)
-        if p.get("kind") not in ("new", "update"):
-            errors.append(f"{w}: kind must be new|update")
-        for f in ("policy_name", "agency", "search_name", "title", "one_liner", "intro", "outro",
-                  "target_short", "support_short", "method_short"):
-            if not (isinstance(p.get(f), str) and p[f].strip()):
-                errors.append(f"{w}: {f} required")
-        # 제목·첫 문장: 정책 고유명사로 시작, 과장 표현 금지
+            if p["persona_id"] in seen_personas:
+                errors.append(f"{w}: one post per persona (duplicate persona {p['persona_id']})")
+            seen_personas.add(p["persona_id"])
+            if focus and p["persona_id"] not in focus:
+                errors.append(f"{w}: persona not in today's focus pair ({', '.join(focus)})")
+            if pid and not pid.endswith("-" + persona["id_code"]):
+                errors.append(f"{w}: id must end with -{persona['id_code']}")
         sn = (p.get("search_name") or "").strip()
         for f in ("title", "search_name"):
             if "**" in (p.get(f) or ""):
@@ -250,73 +270,69 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
         if (p.get("title") or "") in titles:
             errors.append(f"{w}: duplicate title")
         titles.add(p.get("title") or "")
+        body_src = {k: v for k, v in p.items() if k not in ("sources", "items")}
+        body_src["items"] = [{k: v for k, v in it.items() if k not in ("verification", "sources")} for it in p.get("items") or []]
+        body = "\n".join(_walk_strings(body_src))
         for phrase in cfg.get("banned_phrases", []):
-            if phrase in "\n".join(_walk_strings({k: v for k, v in p.items() if k not in ("verification", "sources")})):
+            if phrase in body:
                 errors.append(f"{w}: banned phrase '{phrase}'")
-        sl = p.get("summary_lines")
-        if not (isinstance(sl, list) and 2 <= len(sl) <= 5 and all(isinstance(x, str) and x.strip() for x in sl)):
-            errors.append(f"{w}: summary_lines needs 2-5 lines")
-        for f in ("criteria", "benefits", "drawbacks", "how_to_apply", "sources"):
-            v = p.get(f)
-            if not (isinstance(v, list) and v):
-                errors.append(f"{w}: {f} must have at least 1 item")
-        for j, c in enumerate(p.get("criteria") or []):
-            if not (isinstance(c, dict) and c.get("requirement") and c.get("detail")):
-                errors.append(f"{w}.criteria[{j}]: requirement and detail required")
-        for j, r in enumerate(p.get("related") or []):
-            if not (isinstance(r, dict) and r.get("name") and r.get("line")):
-                errors.append(f"{w}.related[{j}]: name and line required")
-        if len(p.get("related") or []) > 6:
-            errors.append(f"{w}: related has more than 6 items")
         if not (isinstance(p.get("hashtags"), list) and len(p["hashtags"]) >= 2):
             errors.append(f"{w}: hashtags needs at least 2 post-specific tags")
         elif len(all_tags(p, cfg)) > cfg.get("max_tags", 20):
             errors.append(f"{w}: more than {cfg.get('max_tags', 20)} tags in total")
-        if not (isinstance(p.get("documents"), list) or p.get("documents_note")):
-            errors.append(f"{w}: documents or documents_note required")
-        # 대표 인물
-        pp = p.get("personas")
-        if not (isinstance(pp, list) and pp):
-            errors.append(f"{w}: personas needs exactly 1 entry")
-            pp = []
-        elif len(pp) != 1:
-            errors.append(f"{w}: one post per persona — personas must have exactly 1 entry (write a separate post for each persona)")
-        elif pid and personas.get(pp[0].get("persona_id")) and not pid.endswith("-" + personas[pp[0]["persona_id"]]["id_code"]):
-            errors.append(f"{w}: id must end with -{personas[pp[0]['persona_id']]['id_code']}")
-        for j, x in enumerate(pp):
-            if x.get("persona_id") not in personas:
-                errors.append(f"{w}.personas[{j}]: unknown persona_id")
-            elif focus and x["persona_id"] not in focus:
-                errors.append(f"{w}.personas[{j}]: persona not in today's focus pair ({', '.join(focus)})")
-            if x.get("fit") not in ("yes", "partial"):
-                errors.append(f"{w}.personas[{j}]: fit must be yes|partial")
+        items = p.get("items")
+        if not (isinstance(items, list) and 1 <= len(items) <= max_items):
+            errors.append(f"{w}: items needs 1-{max_items} entries")
+            items = []
+        for j, it in enumerate(items):
+            iw = f"{w}.items[{j}]"
+            iid = it.get("id")
+            if not iid or iid in seen_items:
+                errors.append(f"{iw}: unique id required")
+            seen_items.add(iid)
+            if persona and iid and not iid.endswith("-" + persona["id_code"]):
+                errors.append(f"{iw}: id must end with -{persona['id_code']}")
+            if it.get("kind") not in ("new", "update"):
+                errors.append(f"{iw}: kind must be new|update")
+            _req_str(errors, iw, it, ("name", "agency", "search_name", "one_liner", "target_short", "support_short", "method_short"))
+            isn = (it.get("search_name") or "").strip()
+            if isn and not plain(it.get("one_liner")).startswith(isn):
+                errors.append(f"{iw}: one_liner must start with search_name")
+            for f in ("criteria", "benefits", "drawbacks", "how_to_apply", "sources"):
+                v = it.get(f)
+                if not (isinstance(v, list) and v):
+                    errors.append(f"{iw}: {f} must have at least 1 item")
+            for k, c in enumerate(it.get("criteria") or []):
+                if not (isinstance(c, dict) and c.get("requirement") and c.get("detail")):
+                    errors.append(f"{iw}.criteria[{k}]: requirement and detail required")
+            if not (isinstance(it.get("documents"), list) or it.get("documents_note")):
+                errors.append(f"{iw}: documents or documents_note required")
+            pr = it.get("persona") or {}
+            if pr.get("fit") not in ("yes", "partial"):
+                errors.append(f"{iw}.persona: fit must be yes|partial")
             for f in ("story", "benefit_estimate"):
-                if not (isinstance(x.get(f), str) and x[f].strip()):
-                    errors.append(f"{w}.personas[{j}]: {f} required")
-        # 마감일: 당일 마감·지난 마감은 뺀다(읽는 사람이 쓸 시간이 없다)
-        d = p.get("deadline") or {}
-        if not (d.get("end") or d.get("text")):
-            errors.append(f"{w}: deadline.end or deadline.text required")
-        if d.get("end"):
-            end = _parse_date(d["end"])
-            if end is None:
-                errors.append(f"{w}: deadline.end must be YYYY-MM-DD")
-            elif end <= today:
-                errors.append(f"{w}: deadline is today or already past (exclude this policy)")
-        # 링크
-        _check_url(errors, f"{w}.apply_url", p.get("apply_url"))
-        _check_url(errors, f"{w}.notice_url", p.get("notice_url"))
-        for j, s in enumerate(p.get("sources") or []):
-            _check_url(errors, f"{w}.sources[{j}]", s, official_only=False)
-        # 2중 검토
-        v = p.get("verification") or {}
-        for key in ("pass1", "pass2"):
-            r = v.get(key) or {}
-            if r.get("status") != "verified":
-                errors.append(f"{w}: verification.{key}.status must be 'verified'")
-            if not r.get("sources_checked"):
-                errors.append(f"{w}: verification.{key}.sources_checked required")
-    # 금지어(두 사람의 개인정보 등): 모든 문자열 검사, 값은 출력하지 않는다
+                if not (isinstance(pr.get(f), str) and pr[f].strip()):
+                    errors.append(f"{iw}.persona: {f} required")
+            d = it.get("deadline") or {}
+            if not (d.get("end") or d.get("text")):
+                errors.append(f"{iw}: deadline.end or deadline.text required")
+            if d.get("end"):
+                end = _parse_date(d["end"])
+                if end is None:
+                    errors.append(f"{iw}: deadline.end must be YYYY-MM-DD")
+                elif end <= today:
+                    errors.append(f"{iw}: deadline is today or already past (exclude this policy)")
+            _check_url(errors, f"{iw}.apply_url", it.get("apply_url"))
+            _check_url(errors, f"{iw}.notice_url", it.get("notice_url"))
+            for k, s in enumerate(it.get("sources") or []):
+                _check_url(errors, f"{iw}.sources[{k}]", s, official_only=False)
+            v = it.get("verification") or {}
+            for key in ("pass1", "pass2"):
+                r = v.get(key) or {}
+                if r.get("status") != "verified":
+                    errors.append(f"{iw}: verification.{key}.status must be 'verified'")
+                if not r.get("sources_checked"):
+                    errors.append(f"{iw}: verification.{key}.sources_checked required")
     blob = "\n".join(_walk_strings(doc)).lower()
     for n, term in enumerate(denylist, 1):
         if term and term.lower() in blob:
@@ -325,54 +341,12 @@ def validate(doc: dict, personas: dict, denylist: list[str], cfg: dict, today: d
         raise PostsError("posts.json invalid:\n- " + "\n- ".join(errors[:40]))
 
 
-# ---------------------------------------------------------------- blog body
-
-def _persona_name(personas: dict, pid: str) -> str:
-    return personas[pid]["display_name"]
-
-
-def category_for(p: dict, cfg: dict) -> str:
-    first = (p.get("personas") or [{}])[0].get("persona_id")
-    return cfg.get("category_map", {}).get(first, cfg.get("category_default", "정책 소식"))
-
-
-def thumb_url(p: dict, today: dt.date, public_base: str | None) -> str | None:
-    if not public_base:
-        return None
-    return f"{public_base.rstrip('/')}/{today.isoformat()}/{p['id']}/01_thumb.png"
-
-
-def summary_cells(p: dict, today: dt.date) -> list[tuple[str, str]]:
-    d = p.get("deadline") or {}
-    end = _parse_date(d.get("end"))
-    when = (f"{end.month}/{end.day}까지 (D-{(end - today).days})" if end else (d.get("text") or "공고 확인"))
-    return [("대상", p["target_short"]), ("지원 내용", p["support_short"]), ("마감", when), ("신청", p["method_short"])]
-
-
-def _md(cell: str) -> str:
-    return str(cell).replace("|", "\\|").replace("\n", "<br>")
-
-
-def _md_table(header: list[str], rows: list[list[str]]) -> list[str]:
-    out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
-    out += ["| " + " | ".join(_md(c) for c in r) + " |" for r in rows]
-    return out + [""]
-
-
-def plain_html(text) -> str:
-    """이미 형광펜을 씌우는 자리에서 쓰는 이스케이프(** 는 제거)."""
-    return e(plain(text))
-
-
-NAVY = "#1f3a6e"
-BORDER = "#ced4da"
-ZEBRA = "#f8f9fa"
-
+# ---------------------------------------------------------------- tables
 
 def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = None, shade_first: bool = False,
          shade_rows: set | None = None, header_colors: list[str] | None = None, row_colors: list[str] | None = None) -> str:
     """네이버 에디터에 붙여넣어도 너비·음영이 유지되도록 width/bgcolor/bordercolor HTML 속성을 쓴 표.
-    머리글은 진한 배경 + 흰 글씨, 왼쪽 칸은 연한 파랑, 줄무늬(zebra)로 읽기 쉽게 한다. 셀 값은 이미 이스케이프된 HTML."""
+    머리글은 진한 배경 + 흰 글씨, 왼쪽 칸은 연한 파랑, 줄무늬(zebra). 셀 값은 이미 이스케이프된 HTML."""
     t = [f'<table width="100%" border="1" bordercolor="{BORDER}" cellpadding="10" cellspacing="0" style="border-collapse:collapse;border-color:{BORDER}">']
     if header:
         cols = header_colors or [NAVY] * len(header)
@@ -386,7 +360,7 @@ def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = No
             elif row_colors and j == 0 and row_colors[i]:
                 color = row_colors[i]
             elif shade_first and j == 0:
-                color = "#e7f0ff"
+                color = LEFT
             else:
                 color = ZEBRA if i % 2 else "#ffffff"
             cells.append(f'<td width="{w}%" valign="top" bgcolor="{color}">{c}</td>')
@@ -395,77 +369,133 @@ def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = No
     return "".join(t)
 
 
-def summary_rows(p: dict, today: dt.date) -> list[tuple[str, str]]:
-    return summary_cells(p, today)
+def _md(cell: str) -> str:
+    return str(cell).replace("|", "\\|").replace("\n", "<br>")
 
 
-def blog_markdown(p: dict, personas: dict, today: dt.date, img: str | None = None) -> str:
+def _md_table(header: list[str], rows: list[list[str]]) -> list[str]:
+    out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    out += ["| " + " | ".join(_md(c) for c in r) + " |" for r in rows]
+    return out + [""]
+
+
+# ---------------------------------------------------------------- blog body
+
+def category_for(p: dict, cfg: dict) -> str:
+    return cfg.get("category_map", {}).get(p.get("persona_id"), cfg.get("category_default", "정책 소식"))
+
+
+def thumb_url(p: dict, today: dt.date, public_base: str | None) -> str | None:
+    if not public_base:
+        return None
+    return f"{public_base.rstrip('/')}/{today.isoformat()}/{p['id']}/01_thumb.png"
+
+
+def item_summary_rows(it: dict, today: dt.date) -> list[tuple[str, str]]:
+    return [("대상", it["target_short"]), ("지원 내용", it["support_short"]), ("마감", deadline_short(it, today)), ("신청", it["method_short"])]
+
+
+def _sources(p: dict) -> list[str]:
+    srcs = []
+    for it in p["items"]:
+        for s in [it["notice_url"]] + it["sources"]:
+            if s not in srcs:
+                srcs.append(s)
+    return srcs
+
+
+def item_markdown(n: int, it: dict, persona: dict, today: dt.date) -> list[str]:
+    out = [f"## {CIRCLED[n]} {it['name']} ({it['agency']})", "", it["one_liner"], "",
+           f"**⏰ 신청 마감: {deadline_line(it, today)}**", ""]
+    out += _md_table(["구분", "내용"], [[f"**{k}**", v] for k, v in item_summary_rows(it, today)])
+    out += ["### 누가 받을 수 있나요?", ""]
+    out += _md_table(["요건", "내용"], [[f"**{c['requirement']}**", c["detail"]] for c in it["criteria"]])
+    pr = it["persona"]
+    out += [f"### {persona['display_name']}라면", ""]
+    out += _md_table(["해당 여부", "상황과 예상 혜택"],
+                     [[f"{FIT_MARK[pr['fit']]} {FIT_TEXT[pr['fit']]}", f"{pr['story']}\n**예상 혜택:** {pr['benefit_estimate']}"]])
+    pairs = [[(it["benefits"][i] if i < len(it["benefits"]) else ""), (it["drawbacks"][i] if i < len(it["drawbacks"]) else "")]
+             for i in range(max(len(it["benefits"]), len(it["drawbacks"])))]
+    out += ["### 좋은 점과 아쉬운 점", ""] + _md_table(["👍 좋은 점", "👎 아쉬운 점·주의할 점"], pairs)
+    out += ["### 신청 방법", ""] + _md_table(["단계", "할 일"], [[f"**{i}단계**", x] for i, x in enumerate(it["how_to_apply"], 1)])
+    out += [f"- 신청하기: {it['apply_url']}", f"- 공고 원문: {it['notice_url']}", ""]
+    if it.get("documents"):
+        out += ["### 준비 서류", ""] + [f"- {x}" for x in it["documents"]] + [""]
+    elif it.get("documents_note"):
+        out += ["### 준비 서류", "", it["documents_note"], ""]
+    return out
+
+
+def blog_markdown(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dict) -> str:
+    persona = personas[p["persona_id"]]
     out = [f"# {p['title']}", ""]
     if img:
         out += [f"![{p['search_name']} 정리]({img})", ""]
-    out += [p["one_liner"], "", p["intro"], "", f"**⏰ 신청 마감: {deadline_line(p, today)}**", "", "## 한눈에 보기", ""]
-    out += _md_table(["구분", "내용"], [[f"**{k}**", v] for k, v in summary_rows(p, today)])
-    out += ["**핵심 정리**", ""] + [f"- {x}" for x in p["summary_lines"]]
-    out += ["", "## 누가 받을 수 있나요?", ""]
-    out += _md_table(["요건", "내용"], [[f"**{c['requirement']}**", c["detail"]] for c in p["criteria"]])
-    out += ["## 이런 분들은 이렇게 달라져요", "", "_가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요._", ""]
-    out += _md_table(["인물", "상황과 예상 혜택"],
-                     [[f"{FIT_MARK[x['fit']]} **{_persona_name(personas, x['persona_id'])}**\n{FIT_TEXT[x['fit']]}",
-                       f"{x['story']}\n**예상 혜택:** {x['benefit_estimate']}"] for x in p["personas"]])
-    pairs = [[(p["benefits"][i] if i < len(p["benefits"]) else ""), (p["drawbacks"][i] if i < len(p["drawbacks"]) else "")]
-             for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
-    out += ["## 좋은 점과 아쉬운 점", ""] + _md_table(["👍 좋은 점", "👎 아쉬운 점·주의할 점"], pairs)
-    out += ["## 신청 방법", ""] + _md_table(["단계", "할 일"], [[f"**{i}단계**", x] for i, x in enumerate(p["how_to_apply"], 1)])
-    out += [f"- 신청하기: {p['apply_url']}", f"- 공고 원문: {p['notice_url']}"]
-    if p.get("documents"):
-        out += ["", "## 준비 서류", ""] + [f"- {x}" for x in p["documents"]]
-    elif p.get("documents_note"):
-        out += ["", "## 준비 서류", "", p["documents_note"]]
-    if p.get("related"):
-        out += ["", "## 함께 확인하면 좋은 정책", ""] + _md_table(["정책", "한 줄 정리"], [[f"**{r['name']}**", r["line"]] for r in p["related"]])
-    out += ["", p["outro"], "", DISCLAIMER.format(date=today.isoformat()), "", "**출처**", ""]
-    out += [f"- {s}" for s in p["sources"]]
+    out += [p["one_liner"], "", p["intro"], "", f"_이 글의 사례 인물: {persona['display_name']}_", "", "## ⏰ 마감 한눈에", ""]
+    out += _md_table(["정책", "마감"], [[f"**{CIRCLED[n]} {it['name']}**", deadline_line(it, today)] for n, it in enumerate(p["items"])])
+    out += ["## 🔎 정책 한눈에 비교", ""]
+    out += _md_table(["정책", "대상", "지원 내용", "마감"],
+                     [[f"**{CIRCLED[n]} {it['name']}**", it["target_short"], it["support_short"], deadline_short(it, today)]
+                      for n, it in enumerate(p["items"])])
+    for n, it in enumerate(p["items"]):
+        out += item_markdown(n, it, persona, today)
+    out += ["## 마무리", "", p["outro"], "", DISCLAIMER.format(date=today.isoformat()), "", "**출처**", ""]
+    out += [f"- {s}" for s in _sources(p)]
+    out += ["", " ".join("#" + t for t in all_tags(p, cfg))]
     return "\n".join(out)
+
+
+def item_html(n: int, it: dict, persona: dict, today: dt.date) -> list[str]:
+    h = [f'<h2><font color="{NAVY}">{CIRCLED[n]} {e(it["name"])}</font> <small>({e(it["agency"])})</small></h2>',
+         f'<p><font size="4"><b>{rich(it["one_liner"])}</b></font></p>',
+         '<table width="100%" border="0" cellpadding="10" cellspacing="0"><tr>'
+         f'<td width="100%" bgcolor="{HILITE}"><font size="4"><b>⏰ 신청 마감: {e(deadline_line(it, today))}</b></font></td></tr></table>']
+    srows = item_summary_rows(it, today)
+    rows = [[f"<b>{e(k)}</b>", (f"<b>{e(v)}</b>" if k == "마감" else e(v))] for k, v in srows]
+    h.append(_tbl(rows, [25, 75], shade_first=True, shade_rows={i for i, (k, _) in enumerate(srows) if k == "마감"}))
+    h += ["<h3>✅ 누가 받을 수 있나요?</h3>",
+          _tbl([[f"<b>{e(c['requirement'])}</b>", rich(c["detail"])] for c in it["criteria"]], [25, 75], ["요건", "내용"], shade_first=True)]
+    pr = it["persona"]
+    benefit = f'<b><span style="background-color:{HILITE}">{e(plain(pr["benefit_estimate"]))}</span></b>'
+    h += [f"<h3>👥 {e(persona['display_name'])}라면</h3>",
+          _tbl([[f"{FIT_MARK[pr['fit']]} <b>{e(FIT_TEXT[pr['fit']])}</b>", f"{rich(pr['story'])}<br><b>예상 혜택:</b> {benefit}"]],
+               [26, 74], ["해당 여부", "상황과 예상 혜택"], row_colors=["#d3f9d8" if pr["fit"] == "yes" else HILITE])]
+    pairs = [[rich(it["benefits"][i]) if i < len(it["benefits"]) else "", rich(it["drawbacks"][i]) if i < len(it["drawbacks"]) else ""]
+             for i in range(max(len(it["benefits"]), len(it["drawbacks"])))]
+    h += ["<h3>⚖️ 좋은 점과 아쉬운 점</h3>",
+          _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"], header_colors=["#2b8a3e", "#c92a2a"]),
+          "<h3>📝 신청 방법</h3>",
+          _tbl([[f"<b>{i}단계</b>", rich(x)] for i, x in enumerate(it["how_to_apply"], 1)], [18, 82], ["단계", "할 일"], shade_first=True),
+          f'<p><font size="4">🔗 <a href="{e(it["apply_url"])}"><b>신청 바로가기</b></a></font> · 📄 <a href="{e(it["notice_url"])}">공고 원문</a></p>']
+    if it.get("documents"):
+        h += ["<h3>📑 준비 서류</h3><ul>"] + [f"<li>{rich(x)}</li>" for x in it["documents"]] + ["</ul>"]
+    elif it.get("documents_note"):
+        h += ["<h3>📑 준비 서류</h3>", f"<p>{rich(it['documents_note'])}</p>"]
+    return h
 
 
 def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dict) -> str:
     """붙여넣을 본문. 음영은 CSS 가 아니라 bgcolor 속성, 큰 글씨는 <font size> 를 써서 에디터에서 살아남게 한다."""
+    persona = personas[p["persona_id"]]
     h = [f"<h1>{e(p['title'])}</h1>"]
     if img:
         h.append(f'<p><img src="{e(img)}" width="600" alt="{e(p["search_name"])} 정리"></p>')
+    dl_rows = [[f'<font size="4"><b>{CIRCLED[n]} {e(it["name"])}</b></font>', f'<font size="4"><b>{e(deadline_line(it, today))}</b></font>']
+               for n, it in enumerate(p["items"])]
+    cmp_rows = [[f"<b>{CIRCLED[n]} {e(it['name'])}</b>", e(it["target_short"]), e(it["support_short"]), e(deadline_short(it, today))]
+                for n, it in enumerate(p["items"])]
     h += [f'<p><font size="4"><b>{rich(p["one_liner"])}</b></font></p>', f"<p>{rich(p['intro'])}</p>",
-          # 마감: 가장 눈에 띄게(큰 글씨 + 굵게 + 노란 음영 칸)
-          '<table width="100%" border="0" cellpadding="12" cellspacing="0"><tr>'
-          f'<td width="100%" bgcolor="{HILITE}"><font size="5"><b>⏰ 신청 마감: {e(deadline_line(p, today))}</b></font></td></tr></table>',
-          "<h2>🔎 한눈에 보기</h2>"]
-    rows = [[f"<b>{e(k)}</b>", (f"<b>{e(v)}</b>" if k == "마감" else e(v))] for k, v in summary_rows(p, today)]
-    h.append(_tbl(rows, [25, 75], shade_first=True, shade_rows={i for i, (k, _) in enumerate(summary_rows(p, today)) if k == "마감"}))
-    h += ['<p><font size="3"><b>핵심 정리</b></font></p><ul>'] + [f"<li>{rich(x)}</li>" for x in p["summary_lines"]] + ["</ul>",
-          "<h2>✅ 누가 받을 수 있나요?</h2>",
-          _tbl([[f"<b>{e(c['requirement'])}</b>", rich(c["detail"])] for c in p["criteria"]], [25, 75], ["요건", "내용"], shade_first=True),
-          "<h2>👥 이런 분들은 이렇게 달라져요</h2>",
-          "<p><em>가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요.</em></p>",
-          _tbl([[f"{FIT_MARK[x['fit']]} <b>{e(_persona_name(personas, x['persona_id']))}</b><br>{e(FIT_TEXT[x['fit']])}",
-                 f"{rich(x['story'])}<br><b>예상 혜택:</b> <b><span style=\"background-color:{HILITE}\">{plain_html(x['benefit_estimate'])}</span></b>"]
-                for x in p["personas"]], [30, 70], ["인물", "상황과 예상 혜택"],
-               row_colors=["#d3f9d8" if x["fit"] == "yes" else "#fff3bf" for x in p["personas"]])]
-    pairs = [[rich(p["benefits"][i]) if i < len(p["benefits"]) else "", rich(p["drawbacks"][i]) if i < len(p["drawbacks"]) else ""]
-             for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
-    h += ["<h2>⚖️ 좋은 점과 아쉬운 점</h2>",
-          _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"], header_colors=["#2b8a3e", "#c92a2a"]),
-          "<h2>📝 신청 방법</h2>",
-          _tbl([[f"<b>{i}단계</b>", rich(x)] for i, x in enumerate(p["how_to_apply"], 1)], [18, 82], ["단계", "할 일"], shade_first=True),
-          f'<p><font size="4">🔗 <a href="{e(p["apply_url"])}"><b>신청 바로가기</b></a></font> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
-    if p.get("documents"):
-        h += ["<h2>📑 준비 서류</h2><ul>"] + [f"<li>{rich(x)}</li>" for x in p["documents"]] + ["</ul>"]
-    elif p.get("documents_note"):
-        h += ["<h2>📑 준비 서류</h2>", f"<p>{rich(p['documents_note'])}</p>"]
-    if p.get("related"):
-        h += ["<h2>➕ 함께 확인하면 좋은 정책</h2>",
-              _tbl([[f"<b>{e(r['name'])}</b>", rich(r["line"])] for r in p["related"]], [35, 65], ["정책", "한 줄 정리"], shade_first=True)]
-    h += [f"<p>{rich(p['outro'])}</p>", f"<p><small>{e(DISCLAIMER.format(date=today.isoformat()))}</small></p>",
+          f"<p><em>이 글의 사례 인물: {e(persona['display_name'])}</em></p>",
+          "<h2>⏰ 마감 한눈에</h2>",
+          _tbl(dl_rows, [40, 60], ["정책", "마감"], shade_rows=set(range(len(p["items"])))),
+          "<h2>🔎 정책 한눈에 비교</h2>",
+          _tbl(cmp_rows, [26, 26, 30, 18], ["정책", "대상", "지원 내용", "마감"], shade_first=True)]
+    for n, it in enumerate(p["items"]):
+        h.append("<hr>")
+        h += item_html(n, it, persona, today)
+    h += ["<hr>", "<h2>마무리</h2>", f"<p>{rich(p['outro'])}</p>", f"<p><small>{e(DISCLAIMER.format(date=today.isoformat()))}</small></p>",
           "<p><b>출처</b></p><ul>"]
-    h += [f'<li><a href="{e(s)}">{e(s)}</a></li>' for s in p["sources"]]
+    h += [f'<li><a href="{e(s)}">{e(s)}</a></li>' for s in _sources(p)]
     h += ["</ul>", f"<p>{e(' '.join('#' + t for t in all_tags(p, cfg)))}</p>"]
     return "\n".join(h)
 
@@ -473,26 +503,90 @@ def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dic
 # ---------------------------------------------------------------- email
 
 def _sort_key(p: dict, today: dt.date):
-    left = days_left(p, today)
-    pid = ((p.get("personas") or [{}])[0].get("persona_id")) or ""
-    return (pid, left is None or left < 0, left if left is not None else 0)
+    return p.get("persona_id") or ""
+
+
+def counts(posts: list) -> tuple[int, int]:
+    items = [i for p in posts for i in p["items"]]
+    new = sum(1 for i in items if i["kind"] == "new")
+    return new, len(items) - new
 
 
 def subject_for(posts: list, today: dt.date, test: bool = False) -> str:
-    new = sum(1 for p in posts if p["kind"] == "new")
-    upd = len(posts) - new
+    new, upd = counts(posts)
     bits = []
     if new:
         bits.append(f"신규 {new}건")
     if upd:
         bits.append(f"변경 {upd}건")
     s = f"[정책 블로그 원고] 🆕 새 정책 있음 · {' · '.join(bits)}"
-    dated = [(days_left(p, today), p) for p in posts if days_left(p, today) is not None and days_left(p, today) >= 0]
+    dated = []
+    for p in posts:
+        for it in p["items"]:
+            d = days_left(it, today)
+            if d is not None and d >= 0:
+                dated.append((d, it))
     if dated:
-        left, p = min(dated, key=lambda x: x[0])
-        end = _parse_date(p["deadline"]["end"])
+        left, it = min(dated, key=lambda x: x[0])
+        end = _parse_date(it["deadline"]["end"])
         s += f" - 가장 빠른 마감 {end.month}/{end.day}(D-{left})"
     return ("[시험] " if test else "") + s
+
+
+def focus_labels(doc_scan: dict | None, personas: dict, cfg: dict, today: dt.date) -> list[str]:
+    ids = (doc_scan or {}).get("focus") or (cfg.get("focus_by_weekday") or {}).get(str(today.weekday())) or list(personas)
+    return [personas[i]["label"] for i in ids if i in personas]
+
+
+def next_run_text(today: dt.date, cfg: dict) -> str:
+    days = sorted(int(k) for k in (cfg.get("focus_by_weekday") or {}))
+    for add in range(1, 8):
+        d = today + dt.timedelta(days=add)
+        if d.weekday() in days:
+            return f"{fmt_date(d)} 오전"
+    return "다음 정기 실행일"
+
+
+def status_banner_html(posts: list, labels: list[str], today: dt.date) -> str:
+    wd = WEEKDAYS[today.weekday()]
+    if posts:
+        new, upd = counts(posts)
+        what = " · ".join(x for x in (f"신규 {new}건" if new else "", f"변경 {upd}건" if upd else "") if x)
+        return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#2b8a3e">'
+                f'<font size="5" color="#ffffff"><b>🆕 새 정책이 있어요: {e(what)}</b></font><br>'
+                f'<font size="3" color="#ffffff">{wd}요일 점검 · 이번 회차 대표 인물: {e(" · ".join(labels))} · 아래 원고를 올려 주세요</font>'
+                "</td></tr></table>")
+    return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#868e96">'
+            f'<font size="5" color="#ffffff"><b>오늘은 새 정책이 없어요</b></font><br>'
+            f'<font size="3" color="#ffffff">{wd}요일 점검 · 확인한 대표 인물: {e(" · ".join(labels))} · 올릴 원고가 없으니 쉬셔도 돼요</font>'
+            "</td></tr></table>")
+
+
+def render_no_news_html(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
+    scan = doc.get("scan") or {}
+    labels = focus_labels(scan, personas, cfg, today)
+    parts = ['<div style="font-family:-apple-system,\'Malgun Gothic\',sans-serif;max-width:760px;margin:0 auto;line-height:1.65;color:#222">',
+             f"<h2>정책 블로그 점검 결과 ({e(today.isoformat())})</h2>", status_banner_html([], labels, today),
+             "<p>공식 출처를 확인했지만, 이번 회차에 새로 나왔거나 바뀐 정책 중 대표 인물에게 해당하는 것이 없었어요.</p>"]
+    if scan.get("note"):
+        parts.append(f"<p>{e(scan['note'])}</p>")
+    if scan.get("checked"):
+        parts.append("<p><b>이번에 확인한 곳</b></p><ul>" + "".join(f"<li>{e(c)}</li>" for c in scan["checked"]) + "</ul>")
+    parts.append(f"<p>다음 점검: <b>{e(next_run_text(today, cfg))}</b></p></div>")
+    return "\n".join(parts)
+
+
+def render_no_news_text(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
+    scan = doc.get("scan") or {}
+    labels = focus_labels(scan, personas, cfg, today)
+    out = [f"오늘은 새 정책이 없어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)",
+           f"확인한 대표 인물: {' · '.join(labels)}", "올릴 원고가 없으니 쉬셔도 돼요."]
+    if scan.get("note"):
+        out.append(scan["note"])
+    if scan.get("checked"):
+        out += ["", "이번에 확인한 곳:"] + [f"- {c}" for c in scan["checked"]]
+    out += ["", f"다음 점검: {next_run_text(today, cfg)}"]
+    return "\n".join(out)
 
 
 def _guide_box_html(n: int, total: int, p: dict, slot: str, cfg: dict, warnings: list[str], has_thumb: bool) -> str:
@@ -515,63 +609,6 @@ def _guide_box_html(n: int, total: int, p: dict, slot: str, cfg: dict, warnings:
     return "\n".join(box)
 
 
-def focus_labels(doc_scan: dict | None, personas: dict, cfg: dict, today: dt.date) -> list[str]:
-    ids = (doc_scan or {}).get("focus") or (cfg.get("focus_by_weekday") or {}).get(str(today.weekday())) or list(personas)
-    return [personas[i]["label"] for i in ids if i in personas]
-
-
-def next_run_text(today: dt.date, cfg: dict) -> str:
-    days = sorted(int(k) for k in (cfg.get("focus_by_weekday") or {}))
-    for add in range(1, 8):
-        d = today + dt.timedelta(days=add)
-        if d.weekday() in days:
-            return f"{fmt_date(d)} 오전"
-    return "다음 정기 실행일"
-
-
-def status_banner_html(posts: list, labels: list[str], today: dt.date) -> str:
-    wd = WEEKDAYS[today.weekday()]
-    if posts:
-        new = sum(1 for p in posts if p["kind"] == "new")
-        upd = len(posts) - new
-        what = " · ".join(x for x in (f"신규 {new}건" if new else "", f"변경 {upd}건" if upd else "") if x)
-        return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#2b8a3e">'
-                f'<font size="5" color="#ffffff"><b>🆕 새 정책이 있어요: {e(what)}</b></font><br>'
-                f'<font size="3" color="#ffffff">{wd}요일 점검 · 이번 회차 대표 인물: {e(" · ".join(labels))} · 아래 원고를 올려 주세요</font>'
-                "</td></tr></table>")
-    return ('<table width="100%" border="0" cellpadding="14" cellspacing="0"><tr><td bgcolor="#868e96">'
-            f'<font size="5" color="#ffffff"><b>오늘은 새 정책이 없어요</b></font><br>'
-            f'<font size="3" color="#ffffff">{wd}요일 점검 · 확인한 대표 인물: {e(" · ".join(labels))} · 올릴 원고가 없으니 쉬셔도 돼요</font>'
-            "</td></tr></table>")
-
-
-def render_no_news_html(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
-    scan = doc.get("scan") or {}
-    labels = focus_labels(scan, personas, cfg, today)
-    parts = ['<div style="font-family:-apple-system,\'Malgun Gothic\',sans-serif;max-width:760px;margin:0 auto;line-height:1.65;color:#222">',
-             f"<h2>정책 블로그 점검 결과 ({e(today.isoformat())})</h2>", status_banner_html([], labels, today)]
-    parts.append("<p>공식 출처를 확인했지만, 이번 회차에 새로 나왔거나 바뀐 정책 중 대표 인물에게 해당하는 것이 없었어요.</p>")
-    if scan.get("note"):
-        parts.append(f"<p>{e(scan['note'])}</p>")
-    if scan.get("checked"):
-        parts.append("<p><b>이번에 확인한 곳</b></p><ul>" + "".join(f"<li>{e(c)}</li>" for c in scan["checked"]) + "</ul>")
-    parts.append(f"<p>다음 점검: <b>{e(next_run_text(today, cfg))}</b></p></div>")
-    return "\n".join(parts)
-
-
-def render_no_news_text(doc: dict, personas: dict, cfg: dict, today: dt.date) -> str:
-    scan = doc.get("scan") or {}
-    labels = focus_labels(scan, personas, cfg, today)
-    out = [f"오늘은 새 정책이 없어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)",
-           f"확인한 대표 인물: {' · '.join(labels)}", "올릴 원고가 없으니 쉬셔도 돼요."]
-    if scan.get("note"):
-        out.append(scan["note"])
-    if scan.get("checked"):
-        out += ["", "이번에 확인한 곳:"] + [f"- {c}" for c in scan["checked"]]
-    out += ["", f"다음 점검: {next_run_text(today, cfg)}"]
-    return "\n".join(out)
-
-
 def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: dict, warns: dict, thumbs: dict,
                 labels: list[str] | None = None) -> str:
     order = sorted(posts, key=lambda p: _sort_key(p, today))
@@ -580,21 +617,23 @@ def render_html(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
              "<p>각 원고의 노란 상자 아래 빨간 선부터가 붙여넣을 본문입니다. 본문을 선택해 복사하면 서식이 유지되고, 마크다운 원문은 맨 아래에 있어요.</p>",
              "<ol>"]
     for p in order:
-        parts.append(f"<li><strong>{e(p['title'])}</strong> — {'신규' if p['kind'] == 'new' else '변경'} · ⏰ {e(deadline_line(p, today))}</li>")
+        names = " · ".join(i["name"] for i in p["items"])
+        parts.append(f"<li><strong>{e(personas[p['persona_id']]['label'])}</strong> — {e(p['title'])} (정책 {len(p['items'])}가지: {e(names)})</li>")
     parts.append("</ol>")
     for n, p in enumerate(order, 1):
         img = thumbs.get(p["id"], {}).get("url")
+        label = personas[p["persona_id"]]["label"]
         parts += [
             '<hr style="margin:28px 0">',
-            f"<h3>원고 {n}/{len(order)} · {e(personas[p['personas'][0]['persona_id']]['label'])} · {'신규 정책' if p['kind'] == 'new' else '변경된 정책'} · {e(p['policy_name'])} ({e(p['agency'])})</h3>",
-            "<p style='color:#2a6b2a'>✔ 2중 검토 완료(작성 후 자체 검토 + 독립 검토)</p>",
+            f"<h3>원고 {n}/{len(order)} · {e(label)} · 정책 {len(p['items'])}가지 나열</h3>",
+            "<p style='color:#2a6b2a'>✔ 2중 검토 완료(정책마다 작성 후 자체 검토 + 독립 검토)</p>",
             _guide_box_html(n, len(order), p, slots[p["id"]], cfg, warns[p["id"]], bool(thumbs.get(p["id"]))),
             '<hr style="border:0;border-top:3px solid #e03131;margin:14px 0">',
             "<p style='color:#e03131'><strong>↓ 여기서부터 끝까지 붙여넣을 본문</strong></p>",
             blog_html(p, personas, today, img, cfg),
             '<hr style="border:0;border-top:3px solid #e03131;margin:14px 0">',
             "<p><strong>마크다운 원문 (복사용)</strong></p>",
-            f'<pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px;font-size:13px">{e(blog_markdown(p, personas, today, img))}</pre>',
+            f'<pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px;font-size:13px">{e(blog_markdown(p, personas, today, img, cfg))}</pre>',
         ]
     parts += ['<hr style="margin:28px 0">',
               "<p style='color:#666;font-size:13px'>모든 원고는 공식 출처로 2회 검토했습니다. 게시 전 마감일과 링크를 한 번 더 확인하세요. "
@@ -606,16 +645,15 @@ def render_text(posts: list, personas: dict, today: dt.date, cfg: dict, slots: d
     order = sorted(posts, key=lambda p: _sort_key(p, today))
     out = [f"🆕 새 정책이 있어요 ({today.isoformat()} {WEEKDAYS[today.weekday()]}요일 점검)", ""]
     for p in order:
-        out.append(f"- {p['title']} — {'신규' if p['kind'] == 'new' else '변경'} · 마감 {deadline_line(p, today)}")
+        out.append(f"- {personas[p['persona_id']]['label']}: {p['title']}")
     for n, p in enumerate(order, 1):
-        out += ["", "=" * 60, f"원고 {n}/{len(order)} · {personas[p['personas'][0]['persona_id']]['label']} · {p['policy_name']} ({p['agency']})", "=" * 60, "",
+        out += ["", "=" * 60, f"원고 {n}/{len(order)} · {personas[p['persona_id']]['label']} · 정책 {len(p['items'])}가지", "=" * 60, "",
                 f"[발행 정보] 카테고리: {category_for(p, cfg)} / 예약: 오늘 {slots[p['id']]}",
                 f"제목: {p['title']}", f"태그: {', '.join(all_tags(p, cfg))}"]
         if warns[p["id"]]:
             out += ["[검증 메모]"] + [f"  ! {w}" for w in warns[p["id"]]]
         out += ["[발행 전 점검표]"] + [f"  ☐ {c}" for c in cfg["checklist"]]
-        out += ["", "↓ 아래부터 본문", "", blog_markdown(p, personas, today, thumbs.get(p["id"], {}).get("url")),
-                "", " ".join("#" + t for t in all_tags(p, cfg))]
+        out += ["", "↓ 아래부터 본문", "", blog_markdown(p, personas, today, thumbs.get(p["id"], {}).get("url"), cfg)]
     out += ["", "모든 원고는 공식 출처로 2회 검토했습니다. 게시 전 마감일과 링크를 한 번 더 확인하세요."]
     return "\n".join(out)
 
@@ -650,8 +688,7 @@ def build_payload(doc: dict, to: list[str], today: dt.date, cc: list[str] | None
             "text": render_no_news_text(doc, personas, cfg, today), "html": render_no_news_html(doc, personas, cfg, today),
             "from_name": "정책 블로그 원고"}]}
     order = sorted(posts, key=lambda p: _sort_key(p, today))
-    slot_list = cfg["publish_slots"]
-    slots = {p["id"]: slot_list[i] for i, p in enumerate(order)}
+    slots = {p["id"]: cfg["publish_slots"][i] for i, p in enumerate(order)}
     warns = {p["id"]: lint(p, cfg) for p in posts}
     thumbs = collect_thumbs(posts, today, public_base, thumb_dir)
     attachments = []
@@ -692,7 +729,8 @@ def main(argv=None) -> int:
     args.out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.preview_html:
         args.preview_html.write_text(payload["messages"][0]["html"], encoding="utf-8")
-    print(f"payload written: {len(doc['posts'])} post(s)")
+    n_items = sum(len(p["items"]) for p in doc["posts"])
+    print(f"payload written: {len(doc['posts'])} post(s), {n_items} policy item(s)")
     return 0
 
 
