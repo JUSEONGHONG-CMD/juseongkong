@@ -17,3 +17,6 @@ preview*.html
 
 __pycache__/
 *.pyc
+
+posts.json
+blog-state.json

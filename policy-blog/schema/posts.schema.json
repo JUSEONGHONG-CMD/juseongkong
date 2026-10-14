@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "policy-blog/posts.schema.json",
+  "title": "정책 블로그 원고 묶음",
+  "description": "정책 하나당 원고 하나. 렌더러(render_posts.py)가 이 구조에서 블로그 본문(HTML)과 마크다운을 만든다. 실제 개인정보는 넣지 않는다. 대표 인물은 personas.json 의 가상 인물만 쓴다.",
+  "type": "object",
+  "required": ["schema_version", "posts"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "posts": {"type": "array", "items": {"$ref": "#/$defs/post"}}
+  },
+  "$defs": {
+    "verification_pass": {
+      "type": "object",
+      "required": ["status", "sources_checked"],
+      "properties": {
+        "status": {"enum": ["verified", "failed", "unverifiable"]},
+        "sources_checked": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "fixes": {"type": "array", "items": {"type": "string"}},
+        "issues": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "post": {
+      "type": "object",
+      "required": ["id", "kind", "policy_name", "agency", "title", "intro", "summary_lines", "criteria", "personas", "benefits", "drawbacks", "how_to_apply", "apply_url", "notice_url", "deadline", "outro", "hashtags", "sources", "verification"],
+      "properties": {
+        "id": {"type": "string", "description": "안정적인 kebab-case 정책 id (<기관>-<제도>[-지역]). 같은 정책은 항상 같은 id."},
+        "kind": {"enum": ["new", "update"], "description": "blog_state.py merge 가 이력 기준으로 다시 맞춘다"},
+        "policy_name": {"type": "string"},
+        "agency": {"type": "string"},
+        "title": {"type": "string", "description": "블로그 제목. 과장·낚시 표현 금지"},
+        "intro": {"type": "string"},
+        "summary_lines": {"type": "array", "minItems": 2, "maxItems": 5, "items": {"type": "string"}},
+        "criteria": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["requirement", "detail"], "properties": {"requirement": {"type": "string"}, "detail": {"type": "string"}}}},
+        "personas": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "required": ["persona_id", "fit", "story", "benefit_estimate"],
+                    "properties": {"persona_id": {"enum": ["young_single", "newlywed", "parenting", "senior"]},
+                                   "fit": {"enum": ["yes", "partial"]},
+                                   "story": {"type": "string"},
+                                   "benefit_estimate": {"type": "string", "description": "금액은 계산 가정을 함께 적는다"}}}
+        },
+        "benefits": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "drawbacks": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "how_to_apply": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "apply_url": {"type": "string"},
+        "notice_url": {"type": "string"},
+        "documents": {"type": "array", "items": {"type": "string"}},
+        "documents_note": {"type": ["string", "null"]},
+        "deadline": {"type": "object", "properties": {"start": {"type": ["string", "null"], "format": "date"}, "end": {"type": ["string", "null"], "format": "date"}, "text": {"type": ["string", "null"]}}},
+        "outro": {"type": "string"},
+        "hashtags": {"type": "array", "minItems": 3, "items": {"type": "string"}},
+        "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "verification": {"type": "object", "required": ["pass1", "pass2"], "properties": {"pass1": {"$ref": "#/$defs/verification_pass"}, "pass2": {"$ref": "#/$defs/verification_pass"}}}
+      }
+    }
+  }
+}

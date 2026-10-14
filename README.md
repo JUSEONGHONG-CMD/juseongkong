@@ -86,6 +86,32 @@ python3 benefit-radar/scripts/render_email.py --report $W/report.json --to a@exa
 python3 benefit-radar/scripts/deliver.py $W/payload.json --dry-run
 ```
 
+## ✍️ Policy Blog — 정책 블로그 원고 메일
+
+새로 나왔거나 바뀐 정부·지자체 정책을 찾아, **대표 인물 4명(가상: 청년 1인 가구 / 신혼부부 / 영유아 양육 가구 / 소득이 적은 시니어)**의 사례를 넣은 블로그 원고를 메일로 보내는 프로그램입니다.
+
+- 주 2회(화·금 오전) 새 정책·변경 정책을 확인하고, 없으면 메일을 보내지 않습니다. 한 번에 최대 3건.
+- 원고마다 요건 표, 인물별 사례(예상 혜택에 계산 가정 표기), 좋은 점·아쉬운 점, 신청 방법·링크, 서류, **마감일**, 출처, 해시태그를 넣습니다. 메일에 블로그 본문(복사용)과 마크다운 원문이 함께 들어 있습니다. 자동 게시는 하지 않습니다.
+- 공개되는 글이라 Benefit Radar 와 같은 **2중 검토**(작성자 자체 검토 + 독립 서브에이전트)를 거치고, 렌더러가 검토 미통과·비공식 링크·금지어를 거부합니다.
+- 이 프로그램은 특정인의 프로필을 읽지 않으며, 원고에는 `policy-blog/personas.json` 의 가상 인물만 나옵니다. 발송은 Benefit Radar 의 암호화·GitHub Actions 파이프라인을 그대로 씁니다.
+
+| 파일 | 역할 |
+|---|---|
+| `policy-blog/INSTRUCTIONS.md` | Routine 이 따르는 절차 |
+| `policy-blog/personas.json` | 대표 인물 4명(가상) |
+| `policy-blog/schema/posts.schema.json` | 원고 데이터 형식 |
+| `policy-blog/scripts/render_posts.py` | 검증 + 블로그 본문(HTML·마크다운) + 메일 payload |
+| `policy-blog/scripts/blog_state.py` | 이미 쓴 정책 이력(중복·변경 감지) |
+| `policy-blog/scripts/publish_posts.sh` | 이력 병합 → 렌더링 → 암호화 저장 |
+| `policy-blog/examples/sample-posts.json` | 가짜 예시 데이터 |
+
+```bash
+W=$(mktemp -d); cp policy-blog/examples/sample-posts.json $W/posts.json
+python3 policy-blog/scripts/render_posts.py --posts $W/posts.json --to a@example.com \
+  --out $W/payload.json --preview-html $W/preview.html
+python3 benefit-radar/scripts/deliver.py $W/payload.json --dry-run
+```
+
 ---
 
 © All rights reserved. 이 저장소의 코드와 문서는 저작권자의 허락 없이 복제·배포·상업적으로 이용할 수 없습니다.
