@@ -322,32 +322,55 @@ def summary_cells(p: dict, today: dt.date) -> list[tuple[str, str]]:
     return [("대상", p["target_short"]), ("지원 내용", p["support_short"]), ("마감", when), ("신청", p["method_short"])]
 
 
+def _md(cell: str) -> str:
+    return str(cell).replace("|", "\\|").replace("\n", "<br>")
+
+
+def _md_table(header: list[str], rows: list[list[str]]) -> list[str]:
+    out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    out += ["| " + " | ".join(_md(c) for c in r) + " |" for r in rows]
+    return out + [""]
+
+
+def _tbl(rows: list[list[str]], widths: list[int], header: list[str] | None = None) -> str:
+    """네이버 에디터에 붙여넣어도 너비가 유지되도록 width HTML 속성을 쓴 표(셀 값은 이미 이스케이프된 HTML)."""
+    t = ['<table width="100%" border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">']
+    if header:
+        t.append("<tr>" + "".join(f'<th width="{w}%" bgcolor="#f1f3f5">{c}</th>' for c, w in zip(header, widths)) + "</tr>")
+    for r in rows:
+        t.append("<tr>" + "".join(f'<td width="{w}%" valign="top">{c}</td>' for c, w in zip(r, widths)) + "</tr>")
+    t.append("</table>")
+    return "".join(t)
+
+
+def summary_rows(p: dict, today: dt.date) -> list[tuple[str, str]]:
+    return summary_cells(p, today)
+
+
 def blog_markdown(p: dict, personas: dict, today: dt.date, img: str | None = None) -> str:
     out = [f"# {p['title']}", ""]
     if img:
         out += [f"![{p['search_name']} 정리]({img})", ""]
-    out += [p["one_liner"], "", p["intro"], "", f"**⏰ 신청 마감: {deadline_line(p, today)}**", ""]
-    cells = summary_cells(p, today)
-    out += ["| " + " | ".join(k for k, _ in cells) + " |", "|" + "---|" * len(cells),
-            "| " + " | ".join(v for _, v in cells) + " |", "", "## 핵심 정리", ""]
-    out += [f"- {x}" for x in p["summary_lines"]]
+    out += [p["one_liner"], "", p["intro"], "", f"**⏰ 신청 마감: {deadline_line(p, today)}**", "", "## 한눈에 보기", ""]
+    out += _md_table(["구분", "내용"], [[f"**{k}**", v] for k, v in summary_rows(p, today)])
+    out += ["**핵심 정리**", ""] + [f"- {x}" for x in p["summary_lines"]]
     out += ["", "## 누가 받을 수 있나요?", ""]
-    for c in p["criteria"]:
-        out += [f"▪ **{c['requirement']}**", "", c["detail"], ""]
+    out += _md_table(["요건", "내용"], [[f"**{c['requirement']}**", c["detail"]] for c in p["criteria"]])
     out += ["## 이런 분들은 이렇게 달라져요", "", "_가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요._", ""]
-    for x in p["personas"]:
-        out += [f"### {FIT_MARK[x['fit']]} {_persona_name(personas, x['persona_id'])} — {FIT_TEXT[x['fit']]}", "", x["story"], "",
-                f"- 예상 혜택: {x['benefit_estimate']}", ""]
-    out += ["## 좋은 점", ""] + [f"- {x}" for x in p["benefits"]]
-    out += ["", "## 아쉬운 점·주의할 점", ""] + [f"- {x}" for x in p["drawbacks"]]
-    out += ["", "## 신청 방법", ""] + [f"{i}. {x}" for i, x in enumerate(p["how_to_apply"], 1)]
-    out += ["", f"- 신청하기: {p['apply_url']}", f"- 공고 원문: {p['notice_url']}"]
+    out += _md_table(["인물", "상황과 예상 혜택"],
+                     [[f"{FIT_MARK[x['fit']]} **{_persona_name(personas, x['persona_id'])}**\n{FIT_TEXT[x['fit']]}",
+                       f"{x['story']}\n**예상 혜택:** {x['benefit_estimate']}"] for x in p["personas"]])
+    pairs = [[(p["benefits"][i] if i < len(p["benefits"]) else ""), (p["drawbacks"][i] if i < len(p["drawbacks"]) else "")]
+             for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
+    out += ["## 좋은 점과 아쉬운 점", ""] + _md_table(["👍 좋은 점", "👎 아쉬운 점·주의할 점"], pairs)
+    out += ["## 신청 방법", ""] + _md_table(["단계", "할 일"], [[f"**{i}단계**", x] for i, x in enumerate(p["how_to_apply"], 1)])
+    out += [f"- 신청하기: {p['apply_url']}", f"- 공고 원문: {p['notice_url']}"]
     if p.get("documents"):
         out += ["", "## 준비 서류", ""] + [f"- {x}" for x in p["documents"]]
     elif p.get("documents_note"):
         out += ["", "## 준비 서류", "", p["documents_note"]]
     if p.get("related"):
-        out += ["", "## 함께 확인하면 좋은 정책", ""] + [f"- {r['name']} · {r['line']}" for r in p["related"]]
+        out += ["", "## 함께 확인하면 좋은 정책", ""] + _md_table(["정책", "한 줄 정리"], [[f"**{r['name']}**", r["line"]] for r in p["related"]])
     out += ["", p["outro"], "", DISCLAIMER.format(date=today.isoformat()), "", "**출처**", ""]
     out += [f"- {s}" for s in p["sources"]]
     return "\n".join(out)
@@ -358,30 +381,29 @@ def blog_html(p: dict, personas: dict, today: dt.date, img: str | None, cfg: dic
     if img:
         h.append(f'<p><img src="{e(img)}" width="600" alt="{e(p["search_name"])} 정리"></p>')
     h += [f"<p><strong>{e(p['one_liner'])}</strong></p>", f"<p>{e(p['intro'])}</p>",
-          f"<p><strong>⏰ 신청 마감: {e(deadline_line(p, today))}</strong></p>"]
-    cells = summary_cells(p, today)
-    w = 100 // len(cells)
-    h.append('<table width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">')
-    h.append("<tr>" + "".join(f'<th width="{w}%">{e(k)}</th>' for k, _ in cells) + "</tr>")
-    h.append("<tr>" + "".join(f'<td width="{w}%">{e(v)}</td>' for _, v in cells) + "</tr></table>")
-    h += ["<h2>핵심 정리</h2><ul>"] + [f"<li>{e(x)}</li>" for x in p["summary_lines"]] + ["</ul>", "<h2>누가 받을 수 있나요?</h2>"]
-    for c in p["criteria"]:
-        h += [f"<p><strong>▪ {e(c['requirement'])}</strong><br>{e(c['detail'])}</p>"]
-    h += ["<h2>이런 분들은 이렇게 달라져요</h2>",
-          "<p><em>가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요.</em></p>"]
-    for x in p["personas"]:
-        h += [f"<h3>{FIT_MARK[x['fit']]} {e(_persona_name(personas, x['persona_id']))} — {e(FIT_TEXT[x['fit']])}</h3>",
-              f"<p>{e(x['story'])}</p>", f"<ul><li>예상 혜택: {e(x['benefit_estimate'])}</li></ul>"]
-    h += ["<h2>좋은 점</h2><ul>"] + [f"<li>{e(x)}</li>" for x in p["benefits"]] + ["</ul>"]
-    h += ["<h2>아쉬운 점·주의할 점</h2><ul>"] + [f"<li>{e(x)}</li>" for x in p["drawbacks"]] + ["</ul>"]
-    h += ["<h2>신청 방법</h2><ol>"] + [f"<li>{e(x)}</li>" for x in p["how_to_apply"]] + ["</ol>"]
-    h += [f'<p>🔗 <a href="{e(p["apply_url"])}">신청 바로가기</a> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
+          f"<p><strong>⏰ 신청 마감: {e(deadline_line(p, today))}</strong></p>", "<h2>한눈에 보기</h2>",
+          _tbl([[f"<strong>{e(k)}</strong>", e(v)] for k, v in summary_rows(p, today)], [25, 75]),
+          "<p><strong>핵심 정리</strong></p><ul>"] + [f"<li>{e(x)}</li>" for x in p["summary_lines"]] + ["</ul>",
+          "<h2>누가 받을 수 있나요?</h2>",
+          _tbl([[f"<strong>{e(c['requirement'])}</strong>", e(c["detail"])] for c in p["criteria"]], [25, 75], ["요건", "내용"]),
+          "<h2>이런 분들은 이렇게 달라져요</h2>",
+          "<p><em>가상 인물의 사례입니다. ✅는 해당될 가능성이 큰 경우, ❔는 조건 확인이 필요한 경우예요.</em></p>",
+          _tbl([[f"{FIT_MARK[x['fit']]} <strong>{e(_persona_name(personas, x['persona_id']))}</strong><br>{e(FIT_TEXT[x['fit']])}",
+                 f"{e(x['story'])}<br><strong>예상 혜택:</strong> {e(x['benefit_estimate'])}"] for x in p["personas"]],
+               [30, 70], ["인물", "상황과 예상 혜택"])]
+    pairs = [[e(p["benefits"][i]) if i < len(p["benefits"]) else "", e(p["drawbacks"][i]) if i < len(p["drawbacks"]) else ""]
+             for i in range(max(len(p["benefits"]), len(p["drawbacks"])))]
+    h += ["<h2>좋은 점과 아쉬운 점</h2>", _tbl(pairs, [50, 50], ["👍 좋은 점", "👎 아쉬운 점·주의할 점"]),
+          "<h2>신청 방법</h2>",
+          _tbl([[f"<strong>{i}단계</strong>", e(x)] for i, x in enumerate(p["how_to_apply"], 1)], [18, 82], ["단계", "할 일"]),
+          f'<p>🔗 <a href="{e(p["apply_url"])}">신청 바로가기</a> · 📄 <a href="{e(p["notice_url"])}">공고 원문</a></p>']
     if p.get("documents"):
         h += ["<h2>준비 서류</h2><ul>"] + [f"<li>{e(x)}</li>" for x in p["documents"]] + ["</ul>"]
     elif p.get("documents_note"):
         h += ["<h2>준비 서류</h2>", f"<p>{e(p['documents_note'])}</p>"]
     if p.get("related"):
-        h += ["<h2>함께 확인하면 좋은 정책</h2><ul>"] + [f"<li>{e(r['name'])} · {e(r['line'])}</li>" for r in p["related"]] + ["</ul>"]
+        h += ["<h2>함께 확인하면 좋은 정책</h2>",
+              _tbl([[f"<strong>{e(r['name'])}</strong>", e(r["line"])] for r in p["related"]], [35, 65], ["정책", "한 줄 정리"])]
     h += [f"<p>{e(p['outro'])}</p>", f"<p><small>{e(DISCLAIMER.format(date=today.isoformat()))}</small></p>",
           "<p><strong>출처</strong></p><ul>"]
     h += [f'<li><a href="{e(s)}">{e(s)}</a></li>' for s in p["sources"]]
